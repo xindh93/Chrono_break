@@ -414,6 +414,8 @@ local choiceSubmitted = false
 local activeChoices = nil
 local overlayTween: Tween? = nil
 local freezeBlockBound = false
+local autoSelectionTriggered = false
+local autoSelectionArmed = false
 local statusState = {
     total = 0,
     committed = 0,
@@ -588,6 +590,8 @@ end
 local function resetChoices()
     activeChoices = nil
     choiceSubmitted = false
+    autoSelectionTriggered = false
+    autoSelectionArmed = false
     if not optionsFrame then
         refreshStatusLabel(true)
         return
@@ -729,6 +733,28 @@ local function onOptionClicked(button: TextButton)
     Net:GetEvent("CommitLevelUpChoice"):FireServer(choiceId)
 end
 
+local function commitDefaultChoice()
+    if choiceSubmitted or autoSelectionTriggered then
+        return
+    end
+
+    for _, button in ipairs(optionButtons) do
+        if button.Active and button.Selectable then
+            local choiceValue = button:FindFirstChild("ChoiceId")
+            local choiceId = ""
+            if choiceValue and choiceValue:IsA("StringValue") then
+                choiceId = choiceValue.Value
+            end
+
+            if choiceId ~= "" then
+                autoSelectionTriggered = true
+                onOptionClicked(button)
+                return
+            end
+        end
+    end
+end
+
 for _, button in ipairs(optionButtons) do
     button.MouseButton1Click:Connect(function()
         onOptionClicked(button)
@@ -816,6 +842,11 @@ levelUpStatusEvent.OnClientEvent:Connect(function(payload)
 
     if statusState.total > 0 and typeof(payload.Remaining) == "number" then
         statusState.remaining = math.max(0, payload.Remaining)
+        if statusState.remaining > 0 then
+            autoSelectionArmed = true
+        elseif autoSelectionArmed and not choiceSubmitted then
+            commitDefaultChoice()
+        end
     else
         statusState.remaining = 0
     end
@@ -877,6 +908,13 @@ RunService.RenderStepped:Connect(function(dt)
         if math.ceil(statusState.remaining) ~= math.ceil(previous) then
             refreshStatusLabel(false)
         end
+        if statusState.remaining <= 0 and autoSelectionArmed and not autoSelectionTriggered then
+            commitDefaultChoice()
+        end
+    end
+
+    if modalActive and autoSelectionArmed and not autoSelectionTriggered and not choiceSubmitted and (statusState.remaining or 0) <= 0 then
+        commitDefaultChoice()
     end
 
     pushHUDUpdate()
