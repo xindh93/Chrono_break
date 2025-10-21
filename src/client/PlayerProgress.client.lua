@@ -345,18 +345,20 @@ local function refreshStatusLabel(force)
         return
     end
 
-
-    local playerCount = math.max(0, math.floor((statusState.playerCount or 0) + 0.5))
-
-    local playerCount = math.max(activeCount, math.floor((statusState.playerCount or 0) + 0.5))
+    local reportedPlayerCount = math.max(0, math.floor((statusState.playerCount or 0) + 0.5))
+    local playerCount = math.max(activeCount, reportedPlayerCount)
 
     if playerCount <= 0 then
         playerCount = activeCount
     end
 
-    local committed = math.max(0, math.floor(statusState.committed + 0.5))
-    committed = math.clamp(committed, 0, playerCount)
-    local ratioText = string.format("%d/%d", committed, playerCount)
+    local committedActive = math.max(0, math.floor(statusState.committed + 0.5))
+    committedActive = math.clamp(committedActive, 0, activeCount)
+
+    local outstanding = math.max(0, activeCount - committedActive)
+    local completed = math.clamp(playerCount - outstanding, 0, playerCount)
+
+    local ratioText = string.format("%d/%d", completed, playerCount)
     local text = ratioText
     local remaining = statusState.remaining or 0
     if remaining > 0 then
