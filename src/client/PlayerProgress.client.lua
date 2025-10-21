@@ -290,6 +290,8 @@ if statusLabel then
 end
 
 local optionButtons = {}
+local optionDefaults = {}
+local FADE_OFFSET = 0.45
 if optionsFrame then
     for _, child in ipairs(optionsFrame:GetChildren()) do
         if child:IsA("TextButton") then
@@ -299,6 +301,103 @@ if optionsFrame then
     table.sort(optionButtons, function(a, b)
         return a.Name < b.Name
     end)
+end
+
+local function captureOptionDefaults(button: TextButton)
+    local defaults = {
+        BackgroundTransparency = button.BackgroundTransparency,
+        TextTransparency = button.TextTransparency,
+    }
+
+    local nameLabel = button:FindFirstChild("Name")
+    if nameLabel and nameLabel:IsA("TextLabel") then
+        defaults.NameTextTransparency = nameLabel.TextTransparency
+    end
+
+    local descLabel = button:FindFirstChild("Desc")
+    if descLabel and descLabel:IsA("TextLabel") then
+        defaults.DescTextTransparency = descLabel.TextTransparency
+    end
+
+    optionDefaults[button] = defaults
+end
+
+local function restoreOptionVisuals(button: TextButton)
+    local defaults = optionDefaults[button]
+    if not defaults then
+        return
+    end
+
+    if defaults.BackgroundTransparency ~= nil then
+        button.BackgroundTransparency = defaults.BackgroundTransparency
+    end
+    if defaults.TextTransparency ~= nil then
+        button.TextTransparency = defaults.TextTransparency
+    end
+
+    local nameLabel = button:FindFirstChild("Name")
+    if nameLabel and nameLabel:IsA("TextLabel") and defaults.NameTextTransparency ~= nil then
+        nameLabel.TextTransparency = defaults.NameTextTransparency
+    end
+
+    local descLabel = button:FindFirstChild("Desc")
+    if descLabel and descLabel:IsA("TextLabel") and defaults.DescTextTransparency ~= nil then
+        descLabel.TextTransparency = defaults.DescTextTransparency
+    end
+end
+
+local function fadeOptionVisuals(button: TextButton)
+    local defaults = optionDefaults[button]
+    if not defaults then
+        return
+    end
+
+    local function fade(value: number?)
+        if value == nil then
+            return nil
+        end
+        return math.clamp(value + FADE_OFFSET, 0, 1)
+    end
+
+    local fadedBackground = fade(defaults.BackgroundTransparency)
+    if fadedBackground ~= nil then
+        button.BackgroundTransparency = fadedBackground
+    end
+
+    local fadedText = fade(defaults.TextTransparency)
+    if fadedText ~= nil then
+        button.TextTransparency = fadedText
+    end
+
+    local nameLabel = button:FindFirstChild("Name")
+    if nameLabel and nameLabel:IsA("TextLabel") then
+        local target = defaults.NameTextTransparency ~= nil and fade(defaults.NameTextTransparency) or nil
+        if target ~= nil then
+            nameLabel.TextTransparency = target
+        end
+    end
+
+    local descLabel = button:FindFirstChild("Desc")
+    if descLabel and descLabel:IsA("TextLabel") then
+        local target = defaults.DescTextTransparency ~= nil and fade(defaults.DescTextTransparency) or nil
+        if target ~= nil then
+            descLabel.TextTransparency = target
+        end
+    end
+end
+
+local function applySelectionVisuals(selected: TextButton)
+    for _, option in ipairs(optionButtons) do
+        if option == selected then
+            restoreOptionVisuals(option)
+        else
+            fadeOptionVisuals(option)
+        end
+    end
+end
+
+for _, button in ipairs(optionButtons) do
+    captureOptionDefaults(button)
 end
 
 local xpState = {
@@ -315,6 +414,8 @@ local choiceSubmitted = false
 local activeChoices = nil
 local overlayTween: Tween? = nil
 local freezeBlockBound = false
+local autoSelectionTriggered = false
+local autoSelectionArmed = false
 local statusState = {
     total = 0,
     committed = 0,
@@ -345,18 +446,20 @@ local function refreshStatusLabel(force)
         return
     end
 
-
-    local playerCount = math.max(0, math.floor((statusState.playerCount or 0) + 0.5))
-
-    local playerCount = math.max(activeCount, math.floor((statusState.playerCount or 0) + 0.5))
+    local reportedPlayerCount = math.max(0, math.floor((statusState.playerCount or 0) + 0.5))
+    local playerCount = math.max(activeCount, reportedPlayerCount)
 
     if playerCount <= 0 then
         playerCount = activeCount
     end
 
-    local committed = math.max(0, math.floor(statusState.committed + 0.5))
-    committed = math.clamp(committed, 0, playerCount)
-    local ratioText = string.format("%d/%d", committed, playerCount)
+    local committedActive = math.max(0, math.floor(statusState.committed + 0.5))
+    committedActive = math.clamp(committedActive, 0, activeCount)
+
+    local outstanding = math.max(0, activeCount - committedActive)
+    local completed = math.clamp(playerCount - outstanding, 0, playerCount)
+
+    local ratioText = string.format("%d/%d", completed, playerCount)
     local text = ratioText
     local remaining = statusState.remaining or 0
     if remaining > 0 then
@@ -487,12 +590,15 @@ end
 local function resetChoices()
     activeChoices = nil
     choiceSubmitted = false
+    autoSelectionTriggered = false
+    autoSelectionArmed = false
     if not optionsFrame then
         refreshStatusLabel(true)
         return
     end
 
     for _, button in ipairs(optionButtons) do
+        restoreOptionVisuals(button)
         button.AutoButtonColor = false
         button.Active = false
         button.Selectable = false
@@ -537,6 +643,7 @@ local function populateChoices(choices)
     end
 
     for index, button in ipairs(optionButtons) do
+        restoreOptionVisuals(button)
         local info = choices[index]
         local choiceId = button:FindFirstChild("ChoiceId")
         if info and typeof(info) == "table" then
@@ -621,7 +728,31 @@ local function onOptionClicked(button: TextButton)
         end
     end
 
+    applySelectionVisuals(button)
+
     Net:GetEvent("CommitLevelUpChoice"):FireServer(choiceId)
+end
+
+local function commitDefaultChoice()
+    if choiceSubmitted or autoSelectionTriggered then
+        return
+    end
+
+    for _, button in ipairs(optionButtons) do
+        if button.Active and button.Selectable then
+            local choiceValue = button:FindFirstChild("ChoiceId")
+            local choiceId = ""
+            if choiceValue and choiceValue:IsA("StringValue") then
+                choiceId = choiceValue.Value
+            end
+
+            if choiceId ~= "" then
+                autoSelectionTriggered = true
+                onOptionClicked(button)
+                return
+            end
+        end
+    end
 end
 
 for _, button in ipairs(optionButtons) do
@@ -711,6 +842,11 @@ levelUpStatusEvent.OnClientEvent:Connect(function(payload)
 
     if statusState.total > 0 and typeof(payload.Remaining) == "number" then
         statusState.remaining = math.max(0, payload.Remaining)
+        if statusState.remaining > 0 then
+            autoSelectionArmed = true
+        elseif autoSelectionArmed and not choiceSubmitted then
+            commitDefaultChoice()
+        end
     else
         statusState.remaining = 0
     end
@@ -772,6 +908,13 @@ RunService.RenderStepped:Connect(function(dt)
         if math.ceil(statusState.remaining) ~= math.ceil(previous) then
             refreshStatusLabel(false)
         end
+        if statusState.remaining <= 0 and autoSelectionArmed and not autoSelectionTriggered then
+            commitDefaultChoice()
+        end
+    end
+
+    if modalActive and autoSelectionArmed and not autoSelectionTriggered and not choiceSubmitted and (statusState.remaining or 0) <= 0 then
+        commitDefaultChoice()
     end
 
     pushHUDUpdate()
