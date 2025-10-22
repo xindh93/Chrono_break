@@ -5,10 +5,6 @@ local TweenService = game:GetService("TweenService")
 local Knit = require(ReplicatedStorage.Shared.Knit)
 local Net = require(ReplicatedStorage.Shared.Net)
 
-local SidebarController = Knit.CreateController({
-    Name = "SidebarController",
-})
-
 local SIDEBAR_ROW_COLOR = Color3.fromRGB(18, 24, 32)
 local STATS_ICON_COLOR = Color3.fromRGB(155, 91, 217)
 
@@ -106,7 +102,6 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
-    local container = screen:FindFirstChild("Container")
     local bossRow = container and container:FindFirstChild("BossRow")
     local downRow = container and container:FindFirstChild("DownRow")
     local rushRow = container and container:FindFirstChild("RushRow")
@@ -129,29 +124,12 @@ function SidebarController:AttachInterface(screen: ScreenGui)
             rowInstance.AutomaticSize = Enum.AutomaticSize.Y
         end
 
-        if label and label:IsA("TextLabel") then
-            if rowInstance.Name == "StatsRow" then
-                if label.AutomaticSize == Enum.AutomaticSize.None then
-                    label.AutomaticSize = Enum.AutomaticSize.Y
-                end
-                label.TextWrapped = true
-                label.Size = UDim2.new(1, -30, 0, 0)
+        if label and label:IsA("TextLabel") and rowInstance.Name == "StatsRow" then
+            if label.AutomaticSize == Enum.AutomaticSize.None then
+                label.AutomaticSize = Enum.AutomaticSize.Y
             end
-        end
-
-        return {
-            Frame = rowInstance,
-            Label = label,
-        }
-
-    local function capture(rowInstance)
-        if not rowInstance or not rowInstance:IsA("Frame") then
-            return nil
-        end
-
-        local label = rowInstance:FindFirstChild("Label")
-        if not label or not label:IsA("TextLabel") then
-            label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
+            label.TextWrapped = true
+            label.Size = UDim2.new(1, -30, 0, 0)
         end
 
         return {
@@ -261,32 +239,6 @@ function SidebarController:SetRushState(text)
     if self.Rows.Rush and self.Rows.Rush.Label then
         self.Rows.Rush.Label.Text = text
         self:PlayPulse(self.Rows.Rush)
-    end
-end
-
-function SidebarController:SetStatsText(text)
-    local row = self.Rows.Stats
-    if not row or not row.Label then
-        return
-    end
-
-    row.Label.Text = text
-    if self.LastStatsText ~= text then
-        self.LastStatsText = text
-        self:PlayPulse(row)
-    end
-end
-
-function SidebarController:SetStatsText(text)
-    local row = self.Rows.Stats
-    if not row or not row.Label then
-        return
-    end
-
-    row.Label.Text = text
-    if self.LastStatsText ~= text then
-        self.LastStatsText = text
-        self:PlayPulse(row)
     end
 end
 
