@@ -9,6 +9,71 @@ local SidebarController = Knit.CreateController({
     Name = "SidebarController",
 })
 
+local SIDEBAR_ROW_COLOR = Color3.fromRGB(18, 24, 32)
+local STATS_ICON_COLOR = Color3.fromRGB(155, 91, 217)
+
+local function createStatsRow(container: Instance)
+    if not container or not container:IsA("Frame") then
+        return nil
+    end
+
+    local row = Instance.new("Frame")
+    row.Name = "StatsRow"
+    row.BackgroundColor3 = SIDEBAR_ROW_COLOR
+    row.BackgroundTransparency = 0.25
+    row.BorderSizePixel = 0
+    row.AutomaticSize = Enum.AutomaticSize.Y
+    row.Size = UDim2.new(0, 260, 0, 0)
+    row.LayoutOrder = 4
+    row.Parent = container
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = row
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.PaddingRight = UDim.new(0, 10)
+    padding.PaddingTop = UDim.new(0, 6)
+    padding.PaddingBottom = UDim.new(0, 6)
+    padding.Parent = row
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.VerticalAlignment = Enum.VerticalAlignment.Top
+    layout.Padding = UDim.new(0, 10)
+    layout.Parent = row
+
+    local icon = Instance.new("ImageLabel")
+    icon.Name = "Icon"
+    icon.BackgroundTransparency = 1
+    icon.Size = UDim2.new(0, 20, 0, 20)
+    icon.Image = "rbxassetid://0"
+    icon.ImageColor3 = STATS_ICON_COLOR
+    icon.Parent = row
+
+    local label = Instance.new("TextLabel")
+    label.Name = "Label"
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.Gotham
+    label.Text = "강화: 없음"
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextSize = 16
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+    label.TextWrapped = true
+    label.AutomaticSize = Enum.AutomaticSize.Y
+    label.Size = UDim2.new(1, -30, 0, 0)
+    label.Parent = row
+
+    return row
+end
+
+local SidebarController = Knit.CreateController({
+    Name = "SidebarController",
+})
+
 function SidebarController:KnitInit()
     self.Screen = nil
     self.PlayerGui = nil
@@ -38,10 +103,46 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     screen.IgnoreGuiInset = true
 
     local container = screen:FindFirstChild("Container")
+    if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
+        container.AutomaticSize = Enum.AutomaticSize.Y
+    end
+    local container = screen:FindFirstChild("Container")
     local bossRow = container and container:FindFirstChild("BossRow")
     local downRow = container and container:FindFirstChild("DownRow")
     local rushRow = container and container:FindFirstChild("RushRow")
     local statsRow = container and container:FindFirstChild("StatsRow")
+    if container and (not statsRow or not statsRow:IsA("Frame")) then
+        statsRow = createStatsRow(container)
+    end
+
+    local function capture(rowInstance)
+        if not rowInstance or not rowInstance:IsA("Frame") then
+            return nil
+        end
+
+        local label = rowInstance:FindFirstChild("Label")
+        if not label or not label:IsA("TextLabel") then
+            label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
+        end
+
+        if rowInstance.Name == "StatsRow" and rowInstance.AutomaticSize == Enum.AutomaticSize.None then
+            rowInstance.AutomaticSize = Enum.AutomaticSize.Y
+        end
+
+        if label and label:IsA("TextLabel") then
+            if rowInstance.Name == "StatsRow" then
+                if label.AutomaticSize == Enum.AutomaticSize.None then
+                    label.AutomaticSize = Enum.AutomaticSize.Y
+                end
+                label.TextWrapped = true
+                label.Size = UDim2.new(1, -30, 0, 0)
+            end
+        end
+
+        return {
+            Frame = rowInstance,
+            Label = label,
+        }
 
     local function capture(rowInstance)
         if not rowInstance or not rowInstance:IsA("Frame") then
