@@ -70,35 +70,9 @@ local function createStatsRow(container: Instance)
     return row
 end
 
-local function captureRow(rowInstance: Instance)
-    if not rowInstance or not rowInstance:IsA("Frame") then
-        return nil
-    end
-
-    local label = rowInstance:FindFirstChild("Label")
-    if not label or not label:IsA("TextLabel") then
-        label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
-    end
-
-    if rowInstance.Name == "StatsRow" and rowInstance.AutomaticSize == Enum.AutomaticSize.None then
-        rowInstance.AutomaticSize = Enum.AutomaticSize.Y
-    end
-
-    if label and label:IsA("TextLabel") then
-        if rowInstance.Name == "StatsRow" then
-            if label.AutomaticSize == Enum.AutomaticSize.None then
-                label.AutomaticSize = Enum.AutomaticSize.Y
-            end
-            label.TextWrapped = true
-            label.Size = UDim2.new(1, -30, 0, 0)
-        end
-    end
-
-    return {
-        Frame = rowInstance,
-        Label = label,
-    }
-end
+local SidebarController = Knit.CreateController({
+    Name = "SidebarController",
+})
 
 function SidebarController:KnitInit()
     self.Screen = nil
@@ -132,6 +106,7 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
+    local container = screen:FindFirstChild("Container")
     local bossRow = container and container:FindFirstChild("BossRow")
     local downRow = container and container:FindFirstChild("DownRow")
     local rushRow = container and container:FindFirstChild("RushRow")
@@ -140,11 +115,56 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         statsRow = createStatsRow(container)
     end
 
+    local function capture(rowInstance)
+        if not rowInstance or not rowInstance:IsA("Frame") then
+            return nil
+        end
+
+        local label = rowInstance:FindFirstChild("Label")
+        if not label or not label:IsA("TextLabel") then
+            label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
+        end
+
+        if rowInstance.Name == "StatsRow" and rowInstance.AutomaticSize == Enum.AutomaticSize.None then
+            rowInstance.AutomaticSize = Enum.AutomaticSize.Y
+        end
+
+        if label and label:IsA("TextLabel") then
+            if rowInstance.Name == "StatsRow" then
+                if label.AutomaticSize == Enum.AutomaticSize.None then
+                    label.AutomaticSize = Enum.AutomaticSize.Y
+                end
+                label.TextWrapped = true
+                label.Size = UDim2.new(1, -30, 0, 0)
+            end
+        end
+
+        return {
+            Frame = rowInstance,
+            Label = label,
+        }
+
+    local function capture(rowInstance)
+        if not rowInstance or not rowInstance:IsA("Frame") then
+            return nil
+        end
+
+        local label = rowInstance:FindFirstChild("Label")
+        if not label or not label:IsA("TextLabel") then
+            label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
+        end
+
+        return {
+            Frame = rowInstance,
+            Label = label,
+        }
+    end
+
     self.Rows = {
-        Boss = captureRow(bossRow),
-        Down = captureRow(downRow),
-        Rush = captureRow(rushRow),
-        Stats = captureRow(statsRow),
+        Boss = capture(bossRow),
+        Down = capture(downRow),
+        Rush = capture(rushRow),
+        Stats = capture(statsRow),
     }
 
     for _, row in pairs(self.Rows) do
@@ -241,6 +261,32 @@ function SidebarController:SetRushState(text)
     if self.Rows.Rush and self.Rows.Rush.Label then
         self.Rows.Rush.Label.Text = text
         self:PlayPulse(self.Rows.Rush)
+    end
+end
+
+function SidebarController:SetStatsText(text)
+    local row = self.Rows.Stats
+    if not row or not row.Label then
+        return
+    end
+
+    row.Label.Text = text
+    if self.LastStatsText ~= text then
+        self.LastStatsText = text
+        self:PlayPulse(row)
+    end
+end
+
+function SidebarController:SetStatsText(text)
+    local row = self.Rows.Stats
+    if not row or not row.Label then
+        return
+    end
+
+    row.Label.Text = text
+    if self.LastStatsText ~= text then
+        self.LastStatsText = text
+        self:PlayPulse(row)
     end
 end
 
