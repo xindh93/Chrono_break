@@ -290,6 +290,19 @@ function SidebarController:SetStatsText(text)
     end
 end
 
+function SidebarController:SetStatsText(text)
+    local row = self.Rows.Stats
+    if not row or not row.Label then
+        return
+    end
+
+    row.Label.Text = text
+    if self.LastStatsText ~= text then
+        self.LastStatsText = text
+        self:PlayPulse(row)
+    end
+end
+
 function SidebarController:ScheduleRushReset()
     local token = self.RushResetToken + 1
     self.RushResetToken = token
