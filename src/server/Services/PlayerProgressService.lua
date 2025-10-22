@@ -13,41 +13,280 @@ local PlayerProgressService = Knit.CreateService({
 
 local DEFAULT_CHOICES = {
     {
-        id = "atk_+10",
-        name = "파워 모듈",
-        desc = "공격력 +10%",
+        id = "range_add_06",
+        name = "사거리 증폭기",
+        desc = "기본 공격 사거리 +0.6",
         kind = "stat",
-        value = 0.10,
+        stat = "AttackRange",
+        operation = "add",
+        value = 0.6,
     },
     {
-        id = "hp_+15",
-        name = "생명 핵",
-        desc = "최대 체력 +15%",
+        id = "crit_rate_06",
+        name = "정밀 회로",
+        desc = "치명타 확률 +6%",
         kind = "stat",
+        stat = "CritChance",
+        operation = "add",
+        value = 0.06,
+    },
+    {
+        id = "crit_dmg_15",
+        name = "과충전 유닛",
+        desc = "치명타 피해 +15%",
+        kind = "stat",
+        stat = "CritDamage",
+        operation = "add",
         value = 0.15,
     },
     {
-        id = "dash+1",
-        name = "신속한 발걸음",
-        desc = "대시 충전 +1",
-        kind = "perk",
-        value = 1,
+        id = "lifesteal_025",
+        name = "에너지 환류",
+        desc = "입힌 피해의 2.5% 흡수",
+        kind = "stat",
+        stat = "Lifesteal",
+        operation = "compound",
+        value = 0.025,
     },
     {
-        id = "ult_cd-10",
-        name = "집중 코일",
-        desc = "궁극기 재사용 대기시간 -10%",
-        kind = "perk",
+        id = "attack_08",
+        name = "출력 증폭기",
+        desc = "공격력 +8%",
+        kind = "stat",
+        stat = "AttackPower",
+        operation = "add",
+        value = 0.08,
+    },
+    {
+        id = "skill_cdr_08",
+        name = "재가동 모듈",
+        desc = "Q 쿨타임 -8%",
+        kind = "stat",
+        stat = "SkillCooldown",
+        operation = "scale",
+        value = 0.08,
+    },
+    {
+        id = "max_hp_10",
+        name = "생체 강화 코어",
+        desc = "최대 체력 +10%",
+        kind = "stat",
+        stat = "MaxHealth",
+        operation = "add",
         value = 0.10,
     },
     {
-        id = "resurge",
-        name = "재생 회로",
-        desc = "즉시 체력 35% 회복",
-        kind = "instant",
-        value = 0.35,
+        id = "move_speed_04",
+        name = "추진 보강재",
+        desc = "이동 속도 +4%",
+        kind = "stat",
+        stat = "MoveSpeed",
+        operation = "compound",
+        value = 0.04,
     },
 }
+
+local function createDefaultStats()
+    return {
+        AttackRange = 0,
+        AttackPower = 0,
+        CritChance = 0,
+        CritDamage = 0,
+        Lifesteal = 0,
+        SkillCooldownMultiplier = 1,
+        MaxHealth = 0,
+        MoveSpeedBonus = 0,
+    }
+end
+
+local function compoundIncrease(current: number, amount: number): number
+    current = math.clamp(current or 0, 0, 0.95)
+    amount = math.clamp(amount or 0, -0.95, 0.95)
+    return 1 - (1 - current) * (1 - amount)
+end
+
+function PlayerProgressService:GetProfileStats(profile)
+    if not profile then
+        return createDefaultStats()
+    end
+
+    if not profile.stats then
+        profile.stats = createDefaultStats()
+    end
+
+    return profile.stats
+end
+
+function PlayerProgressService:CaptureBaseStats(profile, humanoid)
+    if not profile or not humanoid then
+        return
+    end
+
+    if not profile.baseStats then
+        profile.baseStats = {}
+    end
+
+    profile.baseStats.MaxHealth = humanoid.MaxHealth
+    profile.baseStats.WalkSpeed = humanoid.WalkSpeed
+end
+
+function PlayerProgressService:ApplyStatsToCharacter(player: Player, profile, character)
+    profile = profile or self.Profiles[player]
+    if not profile then
+        return
+    end
+
+    local stats = self:GetProfileStats(profile)
+    character = character or player and player.Character
+    if not character then
+        return
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        return
+    end
+
+    if not profile.baseStats then
+        self:CaptureBaseStats(profile, humanoid)
+    end
+
+    local baseStats = profile.baseStats or {}
+    local baseMaxHealth = baseStats.MaxHealth or humanoid.MaxHealth
+    local baseWalkSpeed = baseStats.WalkSpeed or humanoid.WalkSpeed
+
+    local currentMax = humanoid.MaxHealth
+    local currentHealth = humanoid.Health
+    local ratio = currentMax > 0 and math.clamp(currentHealth / currentMax, 0, 1) or 1
+
+    local maxHealthBonus = math.max(-0.9, stats.MaxHealth or 0)
+    local newMax = math.max(1, baseMaxHealth * (1 + maxHealthBonus))
+    humanoid.MaxHealth = newMax
+    humanoid.Health = math.clamp(newMax * ratio, 0, newMax)
+
+    local moveBonus = stats.MoveSpeedBonus or 0
+    humanoid.WalkSpeed = math.max(0, baseWalkSpeed * (1 + moveBonus))
+end
+
+function PlayerProgressService:InitializeCharacter(player: Player, profile, character)
+    profile = profile or self.Profiles[player]
+    if not profile or not character then
+        return
+    end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then
+        task.spawn(function()
+            local found = character:WaitForChild("Humanoid", 5)
+            if found then
+                self:CaptureBaseStats(profile, found)
+                self:ApplyStatsToCharacter(player, profile, character)
+            end
+        end)
+        return
+    end
+
+    self:CaptureBaseStats(profile, humanoid)
+    self:ApplyStatsToCharacter(player, profile, character)
+end
+
+function PlayerProgressService:GetStatSnapshot(player: Player, profile)
+    profile = profile or self.Profiles[player]
+    local stats = self:GetProfileStats(profile)
+    return {
+        AttackRangeBonus = stats.AttackRange or 0,
+        AttackPowerBonus = stats.AttackPower or 0,
+        CritChance = math.clamp(stats.CritChance or 0, 0, 1),
+        CritDamageMultiplier = 1 + math.max(0, stats.CritDamage or 0),
+        Lifesteal = math.clamp(stats.Lifesteal or 0, 0, 1),
+        SkillCooldownMultiplier = math.clamp(stats.SkillCooldownMultiplier or 1, 0.1, 1),
+        MaxHealthBonus = stats.MaxHealth or 0,
+        MoveSpeedBonus = stats.MoveSpeedBonus or 0,
+    }
+end
+
+function PlayerProgressService:SendStatUpdate(player: Player, profile)
+    profile = profile or self.Profiles[player]
+    if not profile then
+        return
+    end
+
+    local stats = self:GetStatSnapshot(player, profile)
+    local lastChoice = profile.lastChoice
+    local payload = {
+        Stats = stats,
+    }
+    if lastChoice and typeof(lastChoice) == "table" then
+        payload.LastChoice = {
+            id = lastChoice.id,
+            name = lastChoice.name,
+            desc = lastChoice.desc,
+        }
+    end
+
+    Net:FireClient(player, "LevelStats", payload)
+end
+
+function PlayerProgressService:ApplyStatChoice(player: Player, profile, choice)
+    profile = profile or self.Profiles[player]
+    if not profile then
+        return
+    end
+
+    local stats = self:GetProfileStats(profile)
+    local statKey = choice.stat
+    local value = tonumber(choice.value) or 0
+
+    if statKey == "AttackRange" then
+        stats.AttackRange = (stats.AttackRange or 0) + value
+    elseif statKey == "AttackPower" then
+        stats.AttackPower = (stats.AttackPower or 0) + value
+    elseif statKey == "CritChance" then
+        stats.CritChance = math.clamp((stats.CritChance or 0) + value, 0, 1)
+    elseif statKey == "CritDamage" then
+        stats.CritDamage = math.max(0, (stats.CritDamage or 0) + value)
+    elseif statKey == "Lifesteal" then
+        stats.Lifesteal = compoundIncrease(stats.Lifesteal or 0, value)
+    elseif statKey == "SkillCooldown" then
+        local scale = math.clamp(1 - value, 0.25, 1)
+        stats.SkillCooldownMultiplier = math.clamp((stats.SkillCooldownMultiplier or 1) * scale, 0.1, 1)
+    elseif statKey == "MaxHealth" then
+        stats.MaxHealth = math.max(-0.9, (stats.MaxHealth or 0) + value)
+    elseif statKey == "MoveSpeed" then
+        stats.MoveSpeedBonus = compoundIncrease(stats.MoveSpeedBonus or 0, value)
+    end
+
+    self:ApplyStatsToCharacter(player, profile)
+    self:SendStatUpdate(player, profile)
+end
+
+function PlayerProgressService:ApplyChoiceEffect(player: Player, profile, choice)
+    if not choice or typeof(choice) ~= "table" then
+        return
+    end
+
+    local triggeredStatUpdate = false
+    if choice.kind == "stat" and choice.stat then
+        self:ApplyStatChoice(player, profile, choice)
+        triggeredStatUpdate = true
+    elseif choice.kind == "instant" then
+        local character = player.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                local amount = math.max(0, tonumber(choice.value) or 0)
+                if amount > 0 then
+                    local heal = humanoid.MaxHealth * amount
+                    humanoid.Health = math.clamp(humanoid.Health + heal, 0, humanoid.MaxHealth)
+                end
+            end
+        end
+    end
+
+    if not triggeredStatUpdate then
+        self:SendStatUpdate(player, profile)
+    end
+end
 
 function PlayerProgressService:KnitInit()
     self.Profiles = {} :: {[Player]: {
@@ -160,13 +399,20 @@ function PlayerProgressService:CreateProfile(player: Player)
         activeLevelUp = nil,
         connections = {},
         lastChoice = nil,
+        stats = createDefaultStats(),
+        baseStats = nil,
     }
 
     self.Profiles[player] = profile
 
     local connections = profile.connections
     connections.CharacterAdded = player.CharacterAdded:Connect(function(character)
-        if self.WorldFrozen then
+        if character then
+            task.defer(function()
+                self:InitializeCharacter(player, profile, character)
+            end)
+        end
+        if self.WorldFrozen and character then
             task.defer(function()
                 self:_setCharacterFrozen(character, true)
             end)
@@ -174,11 +420,20 @@ function PlayerProgressService:CreateProfile(player: Player)
     end)
 
     local character = player.Character
-    if character and self.WorldFrozen then
+    if character then
         task.defer(function()
-            self:_setCharacterFrozen(character, true)
+            self:InitializeCharacter(player, profile, character)
         end)
+        if self.WorldFrozen then
+            task.defer(function()
+                self:_setCharacterFrozen(character, true)
+            end)
+        end
     end
+
+    task.defer(function()
+        self:SendStatUpdate(player, profile)
+    end)
 
     return profile
 end
@@ -581,7 +836,8 @@ function PlayerProgressService:ApplyLevelUpChoice(player: Player, profile, chose
     end
 
     active.committed = true
-    profile.lastChoice = chosen
+    profile.lastChoice = table.clone(chosen)
+    self:ApplyChoiceEffect(player, profile, chosen)
     self:BroadcastLevelUpStatus()
     self:CompleteLevelUp(player, profile)
 end
