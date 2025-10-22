@@ -14,11 +14,13 @@ local CombatService = Knit.CreateService({
 function CombatService:KnitInit()
     self.LastBasicAttack = {} :: {[Player]: number}
     self.SkillCooldowns = {} :: {[Player]: {[string]: number}}
+    self.Random = Random.new()
 end
 
 function CombatService:KnitStart()
     self.EnemyService = Knit.GetService("EnemyService")
     self.RewardService = Knit.GetService("RewardService")
+    self.PlayerProgressService = Knit.GetService("PlayerProgressService")
 
     local attackEvent = Net:GetEvent("Attack")
     attackEvent.OnServerEvent:Connect(function(player)
@@ -91,6 +93,19 @@ function CombatService:HandleBasicAttack(player: Player)
     local attackAngle = Config.Combat.BasicAttackAngle
     local dealtDamage = 0
 
+    local statSnapshot = self.PlayerProgressService and self.PlayerProgressService:GetStatSnapshot(player) or nil
+    local damageMultiplier = 1
+    local critChance = 0
+    local critDamageMultiplier = 1
+    local lifesteal = 0
+    if statSnapshot then
+        attackRange += statSnapshot.AttackRangeBonus or 0
+        damageMultiplier += statSnapshot.AttackPowerBonus or 0
+        critChance = math.clamp(statSnapshot.CritChance or 0, 0, 1)
+        critDamageMultiplier = statSnapshot.CritDamageMultiplier or 1
+        lifesteal = math.clamp(statSnapshot.Lifesteal or 0, 0, 1)
+    end
+
     for enemyModel, enemyData in pairs(self.EnemyService:GetActiveEnemies()) do
         local enemyRoot = enemyModel.PrimaryPart
         if enemyRoot then
@@ -100,7 +115,10 @@ function CombatService:HandleBasicAttack(player: Player)
                 local direction = offset.Unit
                 local angle = math.deg(math.acos(math.clamp(direction:Dot(lookVector), -1, 1)))
                 if angle <= attackAngle / 2 then
-                    local damage = Config.Combat.BasicAttackDamage
+                    local damage = Config.Combat.BasicAttackDamage * damageMultiplier
+                    if critChance > 0 and (self.Random and self.Random:NextNumber() or math.random()) < critChance then
+                        damage *= critDamageMultiplier
+                    end
                     self.EnemyService:ApplyDamage(enemyModel, damage, player)
                     dealtDamage = dealtDamage + damage
                 end
@@ -110,6 +128,10 @@ function CombatService:HandleBasicAttack(player: Player)
 
     if dealtDamage > 0 then
         self.RewardService:RecordDamage(player, dealtDamage)
+        if lifesteal > 0 and humanoid then
+            local healAmount = dealtDamage * lifesteal
+            humanoid.Health = math.clamp(humanoid.Health + healAmount, 0, humanoid.MaxHealth)
+        end
     end
 end
 
@@ -123,7 +145,12 @@ function CombatService:HandleSkill(player: Player, skillId: string, payload)
         return
     end
 
+    local statSnapshot = self.PlayerProgressService and self.PlayerProgressService:GetStatSnapshot(player) or nil
     local cooldown = definition.Cooldown
+    if statSnapshot and statSnapshot.SkillCooldownMultiplier then
+        cooldown = cooldown * math.clamp(statSnapshot.SkillCooldownMultiplier, 0.1, 1)
+    end
+
     if not self:IsSkillReady(player, skillId, cooldown) then
         return
     end
@@ -143,7 +170,7 @@ function CombatService:HandleSkill(player: Player, skillId: string, payload)
     local levelInfo = definition.LevelCurve(level)
 
     if skillId == "AOE_Blast" then
-        self:ExecuteAOEBlast(player, root, levelInfo, payload)
+        self:ExecuteAOEBlast(player, root, humanoid, levelInfo, payload, statSnapshot)
     end
 
     self:SetSkillUsed(player, skillId)
@@ -166,12 +193,12 @@ function CombatService:HandleSkill(player: Player, skillId: string, payload)
     })
 end
 
-function CombatService:ExecuteAOEBlast(player: Player, root: BasePart, levelInfo, payload)
+function CombatService:ExecuteAOEBlast(player: Player, root: BasePart, humanoid: Humanoid?, levelInfo, payload, statSnapshot)
     local baseRadius = levelInfo.Radius or 10
     local radiusScale = 1.3
     -- Match the fully expanded VFX ring which scales up to ~130% of the base radius.
     local radius = baseRadius * radiusScale
-    local damage = levelInfo.Damage or 40
+    local baseDamage = levelInfo.Damage or 40
     local origin = root.Position
 
     if typeof(payload) == "table" and payload.TargetPosition then
@@ -186,18 +213,39 @@ function CombatService:ExecuteAOEBlast(player: Player, root: BasePart, levelInfo
         end
     end
 
+    local damageMultiplier = 1
+    local critChance = 0
+    local critDamageMultiplier = 1
+    local lifesteal = 0
+    if statSnapshot then
+        damageMultiplier += statSnapshot.AttackPowerBonus or 0
+        critChance = math.clamp(statSnapshot.CritChance or 0, 0, 1)
+        critDamageMultiplier = statSnapshot.CritDamageMultiplier or 1
+        lifesteal = math.clamp(statSnapshot.Lifesteal or 0, 0, 1)
+    end
+
     local affected = 0
+    local dealtDamage = 0
 
     for enemyModel in pairs(self.EnemyService:GetActiveEnemies()) do
         local enemyRoot = enemyModel.PrimaryPart
         if enemyRoot and (enemyRoot.Position - origin).Magnitude <= radius then
+            local damage = baseDamage * damageMultiplier
+            if critChance > 0 and (self.Random and self.Random:NextNumber() or math.random()) < critChance then
+                damage *= critDamageMultiplier
+            end
             self.EnemyService:ApplyDamage(enemyModel, damage, player)
-            affected = affected + 1
+            affected += 1
+            dealtDamage += damage
         end
     end
 
     if affected > 0 then
-        self.RewardService:RecordDamage(player, damage * affected)
+        self.RewardService:RecordDamage(player, dealtDamage)
+        if lifesteal > 0 and humanoid then
+            local healAmount = dealtDamage * lifesteal
+            humanoid.Health = math.clamp(humanoid.Health + healAmount, 0, humanoid.MaxHealth)
+        end
     end
 
     Net:FireAll("Combat", {
