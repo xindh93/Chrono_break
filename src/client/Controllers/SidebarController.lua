@@ -70,6 +70,10 @@ local function createStatsRow(container: Instance)
     return row
 end
 
+local SidebarController = Knit.CreateController({
+    Name = "SidebarController",
+})
+
 function SidebarController:KnitInit()
     self.Screen = nil
     self.PlayerGui = nil
@@ -102,6 +106,7 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
+    local container = screen:FindFirstChild("Container")
     local bossRow = container and container:FindFirstChild("BossRow")
     local downRow = container and container:FindFirstChild("DownRow")
     local rushRow = container and container:FindFirstChild("RushRow")
@@ -132,6 +137,21 @@ function SidebarController:AttachInterface(screen: ScreenGui)
                 label.TextWrapped = true
                 label.Size = UDim2.new(1, -30, 0, 0)
             end
+        end
+
+        return {
+            Frame = rowInstance,
+            Label = label,
+        }
+
+    local function capture(rowInstance)
+        if not rowInstance or not rowInstance:IsA("Frame") then
+            return nil
+        end
+
+        local label = rowInstance:FindFirstChild("Label")
+        if not label or not label:IsA("TextLabel") then
+            label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
         end
 
         return {
