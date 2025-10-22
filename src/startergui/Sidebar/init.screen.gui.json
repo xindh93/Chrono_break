@@ -14,7 +14,7 @@
         "BackgroundTransparency": 1,
         "AnchorPoint": { "Vector2": [1, 0.5] },
         "Position": { "UDim2": [1, -20, 0.5, 0] },
-        "Size": { "UDim2": [0, 280, 0, 140] }
+        "Size": { "UDim2": [0, 280, 0, 220] }
       },
       "$children": {
         "UIListLayout": {
@@ -197,6 +197,69 @@
                 "TextSize": 18,
                 "TextXAlignment": "Left",
                 "TextYAlignment": "Center",
+                "Size": { "UDim2": [1, -30, 1, 0] }
+              }
+            }
+          }
+        },
+        "StatsRow": {
+          "$className": "Frame",
+          "$properties": {
+            "Name": "StatsRow",
+            "BackgroundColor3": { "Color3": [0.070588, 0.094117, 0.12549] },
+            "BackgroundTransparency": 0.25,
+            "BorderSizePixel": 0,
+            "Size": { "UDim2": [0, 260, 0, 84] },
+            "LayoutOrder": 4
+          },
+          "$children": {
+            "UICorner": {
+              "$className": "UICorner",
+              "$properties": {
+                "CornerRadius": { "UDim": [0, 8] }
+              }
+            },
+            "UIPadding": {
+              "$className": "UIPadding",
+              "$properties": {
+                "PaddingLeft": { "UDim": [0, 10] },
+                "PaddingRight": { "UDim": [0, 10] },
+                "PaddingTop": { "UDim": [0, 6] },
+                "PaddingBottom": { "UDim": [0, 6] }
+              }
+            },
+            "UIListLayout": {
+              "$className": "UIListLayout",
+              "$properties": {
+                "FillDirection": "Horizontal",
+                "SortOrder": "LayoutOrder",
+                "VerticalAlignment": "Top",
+                "Padding": { "UDim": [0, 10] }
+              }
+            },
+            "Icon": {
+              "$className": "ImageLabel",
+              "$properties": {
+                "Name": "Icon",
+                "BackgroundTransparency": 1,
+                "Size": { "UDim2": [0, 20, 0, 20] },
+                "Image": "rbxassetid://0",
+                "ImageColor3": { "Color3": [0.607843, 0.356862, 0.85098] }
+              }
+            },
+            "Label": {
+              "$className": "TextLabel",
+              "$properties": {
+                "Name": "Label",
+                "BackgroundTransparency": 1,
+                "Font": "Gotham",
+                "Text": "강화: 없음",
+                "TextColor3": { "Color3": [1, 1, 1] },
+                "TextSize": 16,
+                "TextXAlignment": "Left",
+                "TextYAlignment": "Top",
+                "TextWrapped": true,
+                "RichText": false,
                 "Size": { "UDim2": [1, -30, 1, 0] }
               }
             }
