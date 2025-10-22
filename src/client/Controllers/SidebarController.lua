@@ -17,6 +17,7 @@ function SidebarController:KnitInit()
     self.RushResetToken = 0
     self.ActiveTweens = {}
     self.LastSessionResetClock = 0
+    self.LastStatsText = nil
 end
 
 local function isSidebar(screen: Instance): boolean
@@ -40,6 +41,7 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     local bossRow = container and container:FindFirstChild("BossRow")
     local downRow = container and container:FindFirstChild("DownRow")
     local rushRow = container and container:FindFirstChild("RushRow")
+    local statsRow = container and container:FindFirstChild("StatsRow")
 
     local function capture(rowInstance)
         if not rowInstance or not rowInstance:IsA("Frame") then
@@ -61,6 +63,7 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         Boss = capture(bossRow),
         Down = capture(downRow),
         Rush = capture(rushRow),
+        Stats = capture(statsRow),
     }
 
     for _, row in pairs(self.Rows) do
@@ -78,6 +81,7 @@ function SidebarController:ResetState()
     self.DownCount = 0
     self.RushResetToken = self.RushResetToken + 1
     self.LastSessionResetClock = os.clock()
+    self.LastStatsText = nil
 
     if self.Rows.Boss and self.Rows.Boss.Label then
         self.Rows.Boss.Label.Text = "보스: 대기중"
@@ -90,6 +94,8 @@ function SidebarController:ResetState()
     if self.Rows.Rush and self.Rows.Rush.Label then
         self.Rows.Rush.Label.Text = "러쉬: -"
     end
+
+    self:SetStatsText("강화: 없음")
 end
 
 function SidebarController:PlayPulse(row)
@@ -157,6 +163,19 @@ function SidebarController:SetRushState(text)
     end
 end
 
+function SidebarController:SetStatsText(text)
+    local row = self.Rows.Stats
+    if not row or not row.Label then
+        return
+    end
+
+    row.Label.Text = text
+    if self.LastStatsText ~= text then
+        self.LastStatsText = text
+        self:PlayPulse(row)
+    end
+end
+
 function SidebarController:ScheduleRushReset()
     local token = self.RushResetToken + 1
     self.RushResetToken = token
@@ -210,6 +229,76 @@ function SidebarController:BindRemotes()
                 self.LastSessionResetClock = now
             end
         end
+    end)
+
+    Net:GetEvent("LevelStats").OnClientEvent:Connect(function(payload)
+        if typeof(payload) ~= "table" then
+            self:SetStatsText("강화: 없음")
+            return
+        end
+
+        local stats = payload.Stats
+        local lastChoice = payload.LastChoice
+        local lines = {}
+
+        if typeof(stats) == "table" then
+            local function hasValue(value)
+                return typeof(value) == "number" and math.abs(value) > 1e-4
+            end
+
+            if hasValue(stats.AttackPowerBonus) then
+                table.insert(lines, string.format("공격력 +%.0f%%", stats.AttackPowerBonus * 100))
+            end
+
+            if hasValue(stats.CritChance) then
+                table.insert(lines, string.format("치명타 확률 +%.1f%%", stats.CritChance * 100))
+            end
+
+            if hasValue(stats.CritDamageMultiplier and (stats.CritDamageMultiplier - 1)) then
+                table.insert(lines, string.format("치명타 피해 +%.1f%%", (stats.CritDamageMultiplier - 1) * 100))
+            end
+
+            if hasValue(stats.Lifesteal) then
+                table.insert(lines, string.format("흡혈 +%.1f%%", stats.Lifesteal * 100))
+            end
+
+            if hasValue(stats.AttackRangeBonus) then
+                table.insert(lines, string.format("사거리 +%.1f", stats.AttackRangeBonus))
+            end
+
+            if hasValue(stats.MaxHealthBonus) then
+                table.insert(lines, string.format("체력 +%.0f%%", stats.MaxHealthBonus * 100))
+            end
+
+            if typeof(stats.SkillCooldownMultiplier) == "number" and stats.SkillCooldownMultiplier < 0.999 then
+                local reduction = (1 - stats.SkillCooldownMultiplier) * 100
+                if reduction > 0 then
+                    table.insert(lines, string.format("Q 쿨타임 -%.1f%%", reduction))
+                end
+            end
+
+            if hasValue(stats.MoveSpeedBonus) then
+                table.insert(lines, string.format("이동 속도 +%.1f%%", stats.MoveSpeedBonus * 100))
+            end
+        end
+
+        local text
+        if #lines == 0 then
+            if typeof(lastChoice) == "table" and lastChoice.name then
+                text = string.format("최근 강화: %s", tostring(lastChoice.name))
+            else
+                text = "강화: 없음"
+            end
+        else
+            if typeof(lastChoice) == "table" and lastChoice.name then
+                table.insert(lines, 1, string.format("최근 강화: %s", tostring(lastChoice.name)))
+            else
+                table.insert(lines, 1, "강화 현황")
+            end
+            text = table.concat(lines, "\n")
+        end
+
+        self:SetStatsText(text)
     end)
 end
 

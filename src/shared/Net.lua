@@ -42,6 +42,7 @@ Net.Definitions = {
         CommitLevelUpChoice = "CommitLevelUpChoice",
         SetWorldFreeze = "SetWorldFreeze",
         LevelUpStatus = "LevelUpStatus",
+        LevelStats = "LevelStats",
     },
     Functions = {
         RequestSummary = "RequestSummary",
