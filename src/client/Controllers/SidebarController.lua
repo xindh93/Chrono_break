@@ -224,6 +224,21 @@ local function formatLastChoice(stats, choice)
     return result
 end
 
+local function applyStatsLabelSettings(label: TextLabel?)
+    if not label or not label:IsA("TextLabel") then
+        return
+    end
+
+    if label.AutomaticSize == Enum.AutomaticSize.None then
+        label.AutomaticSize = Enum.AutomaticSize.Y
+    end
+
+    label.TextWrapped = true
+    label.Size = UDim2.new(1, -30, 0, 0)
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Top
+end
+
 local function createStatsRow(container: Instance)
     if not container or not container:IsA("Frame") then
         return nil
@@ -272,12 +287,9 @@ local function createStatsRow(container: Instance)
     label.Text = "강화: 없음"
     label.TextColor3 = Color3.new(1, 1, 1)
     label.TextSize = 16
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.TextYAlignment = Enum.TextYAlignment.Top
-    label.TextWrapped = true
-    label.AutomaticSize = Enum.AutomaticSize.Y
-    label.Size = UDim2.new(1, -30, 0, 0)
     label.Parent = row
+
+    applyStatsLabelSettings(label)
 
     return row
 end
@@ -289,6 +301,7 @@ local SidebarController = Knit.CreateController({
 function SidebarController:KnitInit()
     self.Screen = nil
     self.PlayerGui = nil
+    self.Container = nil
     self.Rows = {}
     self.DownCount = 0
     self.RushResetToken = 0
@@ -356,6 +369,7 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     if not container then
         return
     end
+    self.Container = container
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
@@ -365,21 +379,6 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     local statsRow = waitForChildOfClass(container, "StatsRow", "Frame")
     if container and not statsRow then
         statsRow = createStatsRow(container)
-    end
-
-    local function applyStatsLabelSettings(label: TextLabel)
-        if not label or not label:IsA("TextLabel") then
-            return
-        end
-
-        if label.AutomaticSize == Enum.AutomaticSize.None then
-            label.AutomaticSize = Enum.AutomaticSize.Y
-        end
-
-        label.TextWrapped = true
-        label.Size = UDim2.new(1, -30, 0, 0)
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.TextYAlignment = Enum.TextYAlignment.Top
     end
 
     local function capture(rowKey, rowInstance)
@@ -430,6 +429,8 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         Rush = capture("Rush", rushRow),
         Stats = capture("Stats", statsRow),
     }
+
+    self:EnsureStatsRow()
 
     for _, row in pairs(self.Rows) do
         if row and row.Frame and not row.Frame:FindFirstChildOfClass("UIScale") then
@@ -540,7 +541,7 @@ function SidebarController:SetStatsText(text)
     local value = text or "강화: 없음"
     self.PendingStatsText = value
 
-    local row = self.Rows.Stats
+    local row = self:EnsureStatsRow()
     if not row or not row.Label then
         return
     end
@@ -550,6 +551,59 @@ function SidebarController:SetStatsText(text)
         self.LastStatsText = value
         self:PlayPulse(row)
     end
+end
+
+function SidebarController:EnsureStatsRow()
+    local rows = self.Rows
+    if typeof(rows) ~= "table" then
+        return nil
+    end
+
+    local record = rows.Stats
+    local rowInstance = record and record.Frame
+    if not rowInstance or not rowInstance.Parent then
+        local container = self.Container
+        if not container or not container.Parent then
+            return record
+        end
+
+        local found = container:FindFirstChild("StatsRow")
+        if found and found:IsA("Frame") then
+            rowInstance = found
+        else
+            rowInstance = createStatsRow(container)
+        end
+
+        record = {
+            Frame = rowInstance,
+            Label = nil,
+        }
+        rows.Stats = record
+    end
+
+    local label = record.Label
+    if not label or not label.Parent or not label:IsA("TextLabel") then
+        label = rowInstance:FindFirstChild("Label")
+        if not label or not label:IsA("TextLabel") then
+            label = Instance.new("TextLabel")
+            label.Name = "Label"
+            label.BackgroundTransparency = 1
+            label.Font = Enum.Font.Gotham
+            label.Text = "강화: 없음"
+            label.TextColor3 = Color3.new(1, 1, 1)
+            label.TextSize = 16
+            label.Parent = rowInstance
+        end
+
+        applyStatsLabelSettings(label)
+        record.Label = label
+    end
+
+    if rowInstance.AutomaticSize == Enum.AutomaticSize.None then
+        rowInstance.AutomaticSize = Enum.AutomaticSize.Y
+    end
+
+    return record
 end
 
 function SidebarController:ScheduleRushReset()
