@@ -221,6 +221,9 @@ function PlayerProgressService:SendStatUpdate(player: Player, profile)
             id = lastChoice.id,
             name = lastChoice.name,
             desc = lastChoice.desc,
+            kind = lastChoice.kind,
+            stat = lastChoice.stat,
+            value = lastChoice.value,
         }
     end
 

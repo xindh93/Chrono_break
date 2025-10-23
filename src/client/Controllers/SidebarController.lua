@@ -8,6 +8,222 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local SIDEBAR_ROW_COLOR = Color3.fromRGB(18, 24, 32)
 local STATS_ICON_COLOR = Color3.fromRGB(155, 91, 217)
 
+local STAT_CHOICE_CONFIG = {
+    AttackPower = {
+        label = "공격력",
+        kind = "percent",
+        decimals = 0,
+        totalDecimals = 0,
+        total = function(stats)
+            local value = stats and stats.AttackPowerBonus
+            if typeof(value) == "number" then
+                return value * 100
+            end
+        end,
+    },
+    CritChance = {
+        label = "치명타 확률",
+        kind = "percent",
+        decimals = 1,
+        totalDecimals = 1,
+        total = function(stats)
+            local value = stats and stats.CritChance
+            if typeof(value) == "number" then
+                return value * 100
+            end
+        end,
+    },
+    CritDamage = {
+        label = "치명타 피해",
+        kind = "percent",
+        decimals = 1,
+        totalDecimals = 1,
+        total = function(stats)
+            local value = stats and stats.CritDamageMultiplier
+            if typeof(value) == "number" then
+                return (value - 1) * 100
+            end
+        end,
+    },
+    Lifesteal = {
+        label = "흡혈",
+        kind = "percent",
+        decimals = 1,
+        totalDecimals = 1,
+        total = function(stats)
+            local value = stats and stats.Lifesteal
+            if typeof(value) == "number" then
+                return value * 100
+            end
+        end,
+    },
+    AttackRange = {
+        label = "사거리",
+        kind = "number",
+        decimals = 1,
+        totalDecimals = 1,
+        total = function(stats)
+            local value = stats and stats.AttackRangeBonus
+            if typeof(value) == "number" then
+                return value
+            end
+        end,
+    },
+    MaxHealth = {
+        label = "체력",
+        kind = "percent",
+        decimals = 0,
+        totalDecimals = 0,
+        total = function(stats)
+            local value = stats and stats.MaxHealthBonus
+            if typeof(value) == "number" then
+                return value * 100
+            end
+        end,
+    },
+    MoveSpeed = {
+        label = "이동 속도",
+        kind = "percent",
+        decimals = 1,
+        totalDecimals = 1,
+        total = function(stats)
+            local value = stats and stats.MoveSpeedBonus
+            if typeof(value) == "number" then
+                return value * 100
+            end
+        end,
+    },
+    SkillCooldown = {
+        label = "Q 쿨타임",
+        kind = "percent",
+        decimals = 1,
+        totalDecimals = 1,
+        invert = true,
+        total = function(stats)
+            local multiplier = stats and stats.SkillCooldownMultiplier
+            if typeof(multiplier) == "number" and multiplier < 0.999 then
+                local reduction = (1 - multiplier) * 100
+                if reduction > 0 then
+                    return -reduction
+                end
+            end
+        end,
+    },
+}
+
+local STAT_SUMMARY_ORDER = {
+    "AttackPower",
+    "CritChance",
+    "CritDamage",
+    "Lifesteal",
+    "AttackRange",
+    "MaxHealth",
+    "SkillCooldown",
+    "MoveSpeed",
+}
+
+local VALUE_EPSILON = 1e-4
+
+local function formatStatValue(value, decimals, kind)
+    decimals = decimals or 0
+    local format = "%+." .. tostring(decimals) .. "f"
+    local text = string.format(format, value)
+    if kind == "percent" then
+        text ..= "%"
+    end
+    return text
+end
+
+local function buildSummaryLines(stats)
+    local lines = {}
+    if typeof(stats) ~= "table" then
+        return lines
+    end
+
+    for _, key in ipairs(STAT_SUMMARY_ORDER) do
+        local config = STAT_CHOICE_CONFIG[key]
+        if config and typeof(config.total) == "function" then
+            local totalValue = config.total(stats)
+            if typeof(totalValue) == "number" and math.abs(totalValue) > VALUE_EPSILON then
+                local decimals = config.totalDecimals or config.decimals or 0
+                local valueText = formatStatValue(totalValue, decimals, config.kind)
+                table.insert(lines, string.format("%s %s", config.label, valueText))
+            end
+        end
+    end
+
+    return lines
+end
+
+local function formatLastChoice(stats, choice)
+    if typeof(choice) ~= "table" then
+        return nil
+    end
+
+    if choice.kind ~= "stat" then
+        if typeof(choice.name) == "string" and choice.name ~= "" then
+            return choice.name
+        end
+        if typeof(choice.desc) == "string" and choice.desc ~= "" then
+            return choice.desc
+        end
+        return nil
+    end
+
+    local statKey = choice.stat
+    if typeof(statKey) ~= "string" then
+        if typeof(choice.name) == "string" and choice.name ~= "" then
+            return choice.name
+        end
+        if typeof(choice.desc) == "string" and choice.desc ~= "" then
+            return choice.desc
+        end
+        return nil
+    end
+
+    local config = STAT_CHOICE_CONFIG[statKey]
+    if not config then
+        if typeof(choice.name) == "string" and choice.name ~= "" then
+            return choice.name
+        end
+        if typeof(choice.desc) == "string" and choice.desc ~= "" then
+            return choice.desc
+        end
+        return nil
+    end
+
+    local value = tonumber(choice.value)
+    if not value or math.abs(value) <= VALUE_EPSILON then
+        if typeof(choice.name) == "string" and choice.name ~= "" then
+            return choice.name
+        end
+        if typeof(choice.desc) == "string" and choice.desc ~= "" then
+            return choice.desc
+        end
+        return nil
+    end
+
+    local kind = config.kind or "percent"
+    local decimals = config.decimals or 0
+    local displayValue = kind == "percent" and (value * 100) or value
+    if config.invert then
+        displayValue = -displayValue
+    end
+
+    local result = string.format("%s %s", config.label, formatStatValue(displayValue, decimals, kind))
+
+    if typeof(config.total) == "function" then
+        local totalValue = config.total(stats)
+        if typeof(totalValue) == "number" and math.abs(totalValue) > VALUE_EPSILON then
+            local totalDecimals = config.totalDecimals or decimals
+            local totalText = formatStatValue(totalValue, totalDecimals, kind)
+            result = string.format("%s (총 %s)", result, totalText)
+        end
+    end
+
+    return result
+end
+
 local function createStatsRow(container: Instance)
     if not container or not container:IsA("Frame") then
         return nil
@@ -79,10 +295,48 @@ function SidebarController:KnitInit()
     self.ActiveTweens = {}
     self.LastSessionResetClock = 0
     self.LastStatsText = nil
+    self.PendingStatsText = nil
 end
 
 local function isSidebar(screen: Instance): boolean
     return screen and screen:IsA("ScreenGui") and screen.Name == "Sidebar"
+end
+
+local function waitForChildOfClass(parent: Instance?, name: string, className: string, timeout: number?)
+    if not parent then
+        return nil
+    end
+
+    local child = parent:FindFirstChild(name)
+    if child and child:IsA(className) then
+        return child
+    end
+
+    local startTime = os.clock()
+    local remaining = timeout
+
+    while true do
+        if timeout then
+            remaining = math.max(0, timeout - (os.clock() - startTime))
+            if remaining <= 0 then
+                break
+            end
+        end
+
+        child = parent:WaitForChild(name, remaining)
+        if not child then
+            break
+        end
+
+        if child:IsA(className) then
+            return child
+        end
+
+        -- Wrong class; avoid tight loops by breaking out.
+        break
+    end
+
+    return nil
 end
 
 function SidebarController:AttachInterface(screen: ScreenGui)
@@ -98,15 +352,18 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     screen.ResetOnSpawn = false
     screen.IgnoreGuiInset = true
 
-    local container = screen:FindFirstChild("Container")
+    local container = waitForChildOfClass(screen, "Container", "Frame")
+    if not container then
+        return
+    end
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
-    local bossRow = container and container:FindFirstChild("BossRow")
-    local downRow = container and container:FindFirstChild("DownRow")
-    local rushRow = container and container:FindFirstChild("RushRow")
-    local statsRow = container and container:FindFirstChild("StatsRow")
-    if container and (not statsRow or not statsRow:IsA("Frame")) then
+    local bossRow = waitForChildOfClass(container, "BossRow", "Frame")
+    local downRow = waitForChildOfClass(container, "DownRow", "Frame")
+    local rushRow = waitForChildOfClass(container, "RushRow", "Frame")
+    local statsRow = waitForChildOfClass(container, "StatsRow", "Frame")
+    if container and not statsRow then
         statsRow = createStatsRow(container)
     end
 
@@ -115,8 +372,8 @@ function SidebarController:AttachInterface(screen: ScreenGui)
             return nil
         end
 
-        local label = rowInstance:FindFirstChild("Label")
-        if not label or not label:IsA("TextLabel") then
+        local label = waitForChildOfClass(rowInstance, "Label", "TextLabel", 2)
+        if not label then
             label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
         end
 
@@ -153,14 +410,21 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         end
     end
 
-    self:ResetState()
+    self:ResetState(false)
 end
 
-function SidebarController:ResetState()
+function SidebarController:ResetState(resetStatsText)
+    if resetStatsText == nil then
+        resetStatsText = true
+    end
+
     self.DownCount = 0
     self.RushResetToken = self.RushResetToken + 1
     self.LastSessionResetClock = os.clock()
-    self.LastStatsText = nil
+    if resetStatsText then
+        self.LastStatsText = nil
+        self.PendingStatsText = "강화: 없음"
+    end
 
     if self.Rows.Boss and self.Rows.Boss.Label then
         self.Rows.Boss.Label.Text = "보스: 대기중"
@@ -174,7 +438,8 @@ function SidebarController:ResetState()
         self.Rows.Rush.Label.Text = "러쉬: -"
     end
 
-    self:SetStatsText("강화: 없음")
+    local statsText = self.PendingStatsText or "강화: 없음"
+    self:SetStatsText(statsText)
 end
 
 function SidebarController:PlayPulse(row)
@@ -243,14 +508,17 @@ function SidebarController:SetRushState(text)
 end
 
 function SidebarController:SetStatsText(text)
+    local value = text or "강화: 없음"
+    self.PendingStatsText = value
+
     local row = self.Rows.Stats
     if not row or not row.Label then
         return
     end
 
-    row.Label.Text = text
-    if self.LastStatsText ~= text then
-        self.LastStatsText = text
+    row.Label.Text = value
+    if self.LastStatsText ~= value then
+        self.LastStatsText = value
         self:PlayPulse(row)
     end
 end
@@ -304,7 +572,7 @@ function SidebarController:BindRemotes()
         if state == "Active" and typeof(elapsed) == "number" and elapsed <= 0.5 then
             local now = os.clock()
             if now - (self.LastSessionResetClock or 0) > 1 then
-                self:ResetState()
+                self:ResetState(true)
                 self.LastSessionResetClock = now
             end
         end
@@ -318,66 +586,31 @@ function SidebarController:BindRemotes()
 
         local stats = payload.Stats
         local lastChoice = payload.LastChoice
-        local lines = {}
+        local summaryLines = buildSummaryLines(stats)
+        local outputLines = {}
 
-        if typeof(stats) == "table" then
-            local function hasValue(value)
-                return typeof(value) == "number" and math.abs(value) > 1e-4
-            end
-
-            if hasValue(stats.AttackPowerBonus) then
-                table.insert(lines, string.format("공격력 +%.0f%%", stats.AttackPowerBonus * 100))
-            end
-
-            if hasValue(stats.CritChance) then
-                table.insert(lines, string.format("치명타 확률 +%.1f%%", stats.CritChance * 100))
-            end
-
-            if hasValue(stats.CritDamageMultiplier and (stats.CritDamageMultiplier - 1)) then
-                table.insert(lines, string.format("치명타 피해 +%.1f%%", (stats.CritDamageMultiplier - 1) * 100))
-            end
-
-            if hasValue(stats.Lifesteal) then
-                table.insert(lines, string.format("흡혈 +%.1f%%", stats.Lifesteal * 100))
-            end
-
-            if hasValue(stats.AttackRangeBonus) then
-                table.insert(lines, string.format("사거리 +%.1f", stats.AttackRangeBonus))
-            end
-
-            if hasValue(stats.MaxHealthBonus) then
-                table.insert(lines, string.format("체력 +%.0f%%", stats.MaxHealthBonus * 100))
-            end
-
-            if typeof(stats.SkillCooldownMultiplier) == "number" and stats.SkillCooldownMultiplier < 0.999 then
-                local reduction = (1 - stats.SkillCooldownMultiplier) * 100
-                if reduction > 0 then
-                    table.insert(lines, string.format("Q 쿨타임 -%.1f%%", reduction))
-                end
-            end
-
-            if hasValue(stats.MoveSpeedBonus) then
-                table.insert(lines, string.format("이동 속도 +%.1f%%", stats.MoveSpeedBonus * 100))
+        local formattedChoice = formatLastChoice(stats, lastChoice)
+        if formattedChoice then
+            table.insert(outputLines, string.format("최근 강화: %s", formattedChoice))
+        elseif typeof(lastChoice) == "table" then
+            local fallback = lastChoice.name or lastChoice.desc
+            if typeof(fallback) == "string" and fallback ~= "" then
+                table.insert(outputLines, string.format("최근 강화: %s", fallback))
             end
         end
 
-        local text
-        if #lines == 0 then
-            if typeof(lastChoice) == "table" and lastChoice.name then
-                text = string.format("최근 강화: %s", tostring(lastChoice.name))
-            else
-                text = "강화: 없음"
+        if #summaryLines > 0 then
+            table.insert(outputLines, "강화 현황")
+            for _, line in ipairs(summaryLines) do
+                table.insert(outputLines, line)
             end
-        else
-            if typeof(lastChoice) == "table" and lastChoice.name then
-                table.insert(lines, 1, string.format("최근 강화: %s", tostring(lastChoice.name)))
-            else
-                table.insert(lines, 1, "강화 현황")
-            end
-            text = table.concat(lines, "\n")
         end
 
-        self:SetStatsText(text)
+        if #outputLines == 0 then
+            outputLines = {"강화: 없음"}
+        end
+
+        self:SetStatsText(table.concat(outputLines, "\n"))
     end)
 end
 
