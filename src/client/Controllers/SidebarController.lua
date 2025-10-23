@@ -367,7 +367,22 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         statsRow = createStatsRow(container)
     end
 
-    local function capture(rowInstance)
+    local function applyStatsLabelSettings(label: TextLabel)
+        if not label or not label:IsA("TextLabel") then
+            return
+        end
+
+        if label.AutomaticSize == Enum.AutomaticSize.None then
+            label.AutomaticSize = Enum.AutomaticSize.Y
+        end
+
+        label.TextWrapped = true
+        label.Size = UDim2.new(1, -30, 0, 0)
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextYAlignment = Enum.TextYAlignment.Top
+    end
+
+    local function capture(rowKey, rowInstance)
         if not rowInstance or not rowInstance:IsA("Frame") then
             return nil
         end
@@ -381,25 +396,39 @@ function SidebarController:AttachInterface(screen: ScreenGui)
             rowInstance.AutomaticSize = Enum.AutomaticSize.Y
         end
 
-        if label and label:IsA("TextLabel") and rowInstance.Name == "StatsRow" then
-            if label.AutomaticSize == Enum.AutomaticSize.None then
-                label.AutomaticSize = Enum.AutomaticSize.Y
-            end
-            label.TextWrapped = true
-            label.Size = UDim2.new(1, -30, 0, 0)
-        end
-
-        return {
+        local captured = {
             Frame = rowInstance,
             Label = label,
         }
+
+        if rowInstance.Name == "StatsRow" then
+            if label and label:IsA("TextLabel") then
+                applyStatsLabelSettings(label)
+            else
+                task.spawn(function()
+                    local statsLabel = waitForChildOfClass(rowInstance, "Label", "TextLabel")
+                    if not statsLabel then
+                        statsLabel = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
+                    end
+                    if statsLabel and statsLabel:IsA("TextLabel") then
+                        captured.Label = statsLabel
+                        applyStatsLabelSettings(statsLabel)
+                        if self.Rows and self.Rows[rowKey] == captured then
+                            self:SetStatsText(self.PendingStatsText or self.LastStatsText or "강화: 없음")
+                        end
+                    end
+                end)
+            end
+        end
+
+        return captured
     end
 
     self.Rows = {
-        Boss = capture(bossRow),
-        Down = capture(downRow),
-        Rush = capture(rushRow),
-        Stats = capture(statsRow),
+        Boss = capture("Boss", bossRow),
+        Down = capture("Down", downRow),
+        Rush = capture("Rush", rushRow),
+        Stats = capture("Stats", statsRow),
     }
 
     for _, row in pairs(self.Rows) do
