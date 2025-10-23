@@ -295,10 +295,48 @@ function SidebarController:KnitInit()
     self.ActiveTweens = {}
     self.LastSessionResetClock = 0
     self.LastStatsText = nil
+    self.PendingStatsText = nil
 end
 
 local function isSidebar(screen: Instance): boolean
     return screen and screen:IsA("ScreenGui") and screen.Name == "Sidebar"
+end
+
+local function waitForChildOfClass(parent: Instance?, name: string, className: string, timeout: number?)
+    if not parent then
+        return nil
+    end
+
+    local child = parent:FindFirstChild(name)
+    if child and child:IsA(className) then
+        return child
+    end
+
+    local startTime = os.clock()
+    local remaining = timeout
+
+    while true do
+        if timeout then
+            remaining = math.max(0, timeout - (os.clock() - startTime))
+            if remaining <= 0 then
+                break
+            end
+        end
+
+        child = parent:WaitForChild(name, remaining)
+        if not child then
+            break
+        end
+
+        if child:IsA(className) then
+            return child
+        end
+
+        -- Wrong class; avoid tight loops by breaking out.
+        break
+    end
+
+    return nil
 end
 
 function SidebarController:AttachInterface(screen: ScreenGui)
@@ -314,15 +352,18 @@ function SidebarController:AttachInterface(screen: ScreenGui)
     screen.ResetOnSpawn = false
     screen.IgnoreGuiInset = true
 
-    local container = screen:FindFirstChild("Container")
+    local container = waitForChildOfClass(screen, "Container", "Frame")
+    if not container then
+        return
+    end
     if container and container:IsA("Frame") and container.AutomaticSize == Enum.AutomaticSize.None then
         container.AutomaticSize = Enum.AutomaticSize.Y
     end
-    local bossRow = container and container:FindFirstChild("BossRow")
-    local downRow = container and container:FindFirstChild("DownRow")
-    local rushRow = container and container:FindFirstChild("RushRow")
-    local statsRow = container and container:FindFirstChild("StatsRow")
-    if container and (not statsRow or not statsRow:IsA("Frame")) then
+    local bossRow = waitForChildOfClass(container, "BossRow", "Frame")
+    local downRow = waitForChildOfClass(container, "DownRow", "Frame")
+    local rushRow = waitForChildOfClass(container, "RushRow", "Frame")
+    local statsRow = waitForChildOfClass(container, "StatsRow", "Frame")
+    if container and not statsRow then
         statsRow = createStatsRow(container)
     end
 
@@ -331,8 +372,8 @@ function SidebarController:AttachInterface(screen: ScreenGui)
             return nil
         end
 
-        local label = rowInstance:FindFirstChild("Label")
-        if not label or not label:IsA("TextLabel") then
+        local label = waitForChildOfClass(rowInstance, "Label", "TextLabel", 2)
+        if not label then
             label = rowInstance:FindFirstChildWhichIsA("TextLabel", true)
         end
 
@@ -369,14 +410,21 @@ function SidebarController:AttachInterface(screen: ScreenGui)
         end
     end
 
-    self:ResetState()
+    self:ResetState(false)
 end
 
-function SidebarController:ResetState()
+function SidebarController:ResetState(resetStatsText)
+    if resetStatsText == nil then
+        resetStatsText = true
+    end
+
     self.DownCount = 0
     self.RushResetToken = self.RushResetToken + 1
     self.LastSessionResetClock = os.clock()
-    self.LastStatsText = nil
+    if resetStatsText then
+        self.LastStatsText = nil
+        self.PendingStatsText = "강화: 없음"
+    end
 
     if self.Rows.Boss and self.Rows.Boss.Label then
         self.Rows.Boss.Label.Text = "보스: 대기중"
@@ -390,7 +438,8 @@ function SidebarController:ResetState()
         self.Rows.Rush.Label.Text = "러쉬: -"
     end
 
-    self:SetStatsText("강화: 없음")
+    local statsText = self.PendingStatsText or "강화: 없음"
+    self:SetStatsText(statsText)
 end
 
 function SidebarController:PlayPulse(row)
@@ -459,14 +508,17 @@ function SidebarController:SetRushState(text)
 end
 
 function SidebarController:SetStatsText(text)
+    local value = text or "강화: 없음"
+    self.PendingStatsText = value
+
     local row = self.Rows.Stats
     if not row or not row.Label then
         return
     end
 
-    row.Label.Text = text
-    if self.LastStatsText ~= text then
-        self.LastStatsText = text
+    row.Label.Text = value
+    if self.LastStatsText ~= value then
+        self.LastStatsText = value
         self:PlayPulse(row)
     end
 end
@@ -520,7 +572,7 @@ function SidebarController:BindRemotes()
         if state == "Active" and typeof(elapsed) == "number" and elapsed <= 0.5 then
             local now = os.clock()
             if now - (self.LastSessionResetClock or 0) > 1 then
-                self:ResetState()
+                self:ResetState(true)
                 self.LastSessionResetClock = now
             end
         end
