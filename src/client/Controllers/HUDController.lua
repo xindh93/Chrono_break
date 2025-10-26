@@ -454,6 +454,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         if primary.Overlay then
             primary.Overlay.BackgroundColor3 = abilityConfig.PrimaryCooldownOverlayColor or Color3.new(0, 0, 0)
             primary.Overlay.BackgroundTransparency = abilityConfig.PrimaryCooldownOverlayTransparency or 0.35
+            if primary.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                primary.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            primary.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
             primary.Overlay.Visible = false
             primary.Overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -480,6 +484,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         if skill.Overlay then
             skill.Overlay.BackgroundColor3 = abilityConfig.SkillCooldownOverlayColor or Color3.new(0, 0, 0)
             skill.Overlay.BackgroundTransparency = abilityConfig.SkillCooldownOverlayTransparency or 0.35
+            if skill.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                skill.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            skill.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
             skill.Overlay.Visible = false
             skill.Overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -506,6 +514,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         if dash.Overlay then
             dash.Overlay.BackgroundColor3 = dashConfig.CooldownOverlayColor or Color3.new(0, 0, 0)
             dash.Overlay.BackgroundTransparency = dashConfig.CooldownOverlayTransparency or 0.35
+            if dash.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                dash.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            dash.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
             dash.Overlay.Visible = false
             dash.Overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -660,6 +672,10 @@ local function applyCooldownVisual(
         label.TextStrokeTransparency = 0.6
         label.Visible = true
         if overlay then
+            if overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            overlay.Position = UDim2.new(0.5, 0, 1, 0)
             overlay.Visible = false
             overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -686,6 +702,10 @@ local function applyCooldownVisual(
         if typeof(totalDuration) == "number" and totalDuration > 0 then
             ratio = math.clamp(remaining / totalDuration, 0, 1)
         end
+        if overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+            overlay.AnchorPoint = Vector2.new(0.5, 1)
+        end
+        overlay.Position = UDim2.new(0.5, 0, 1, 0)
         overlay.Visible = true
         overlay.Size = UDim2.new(1, 0, ratio, 0)
     end
