@@ -19,6 +19,7 @@ function UIController:KnitInit()
         Gold = 0,
         XP = 0,
         Elapsed = 0,
+        Wave = 1,
         Kills = 0,
         DamageDealt = 0,
         Assists = 0,
@@ -321,6 +322,8 @@ function UIController:ApplyHUDUpdate(payload)
             if typeof(value) == "number" then
                 self.State.Elapsed = math.max(0, value)
             end
+        elseif key == "Wave" then
+            self.State.Wave = value
         elseif key == "TimeRemaining" then
             if typeof(value) == "number" then
                 if value >= 0 then
