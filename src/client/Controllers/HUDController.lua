@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local Knit = require(ReplicatedStorage.Shared.Knit)
 local Config = require(ReplicatedStorage.Shared.Config)
@@ -39,6 +40,8 @@ function HUDController:KnitInit()
     self.AlertTasks = {}
     self.InterfaceSignal = Instance.new("BindableEvent")
     self.InterfaceSignal.Name = "HUDInterfaceReady"
+    self.CurrentWave = 1
+    self.PartyOverlayVisible = false
 end
 
 function HUDController:KnitStart()
@@ -63,6 +66,22 @@ function HUDController:KnitStart()
     playerGui.ChildAdded:Connect(function(child)
         if child.Name == "SkillSurvivalHUD" then
             task.defer(tryAttach, child)
+        end
+    end)
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then
+            return
+        end
+
+        if input.KeyCode == Enum.KeyCode.Tab then
+            self:SetPartyOverlayVisible(true)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.KeyCode == Enum.KeyCode.Tab then
+            self:SetPartyOverlayVisible(false)
         end
     end)
 end
@@ -110,7 +129,11 @@ function HUDController:KnitShutdown()
         self.InterfaceSignal = nil
     end
     self.Screen = nil
+    if self.Elements and self.Elements.PartyOverlay then
+        self.Elements.PartyOverlay.Visible = false
+    end
     self.Elements = {}
+    self.PartyOverlayVisible = false
 end
 
 function HUDController:OnInterfaceReady(callback)
@@ -190,17 +213,22 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         return
     end
 
-    local leftColumn = safeFrame:FindFirstChild("LeftColumn")
-    local statusPanel = leftColumn and leftColumn:FindFirstChild("StatusPanel")
-    local xpPanel = leftColumn and leftColumn:FindFirstChild("XPPanel")
-    local waveLabel = statusPanel and statusPanel:FindFirstChild("WaveLabel")
-    local enemyLabel = statusPanel and statusPanel:FindFirstChild("EnemyLabel")
-    local timerLabel = statusPanel and statusPanel:FindFirstChild("TimerLabel")
-    local goldLabel = statusPanel and statusPanel:FindFirstChild("GoldLabel")
+    local topBar = safeFrame:FindFirstChild("TopBar")
+    local timerPanel = topBar and topBar:FindFirstChild("TimerPanel")
+    local timerLabel = timerPanel and timerPanel:FindFirstChild("TimerLabel")
+    local wavePanel = topBar and topBar:FindFirstChild("WavePanel")
+    local waveLabel = wavePanel and wavePanel:FindFirstChild("WaveLabel")
+    local statsPanel = topBar and topBar:FindFirstChild("StatsPanel")
+    local enemyLabel = statsPanel and statsPanel:FindFirstChild("EnemyLabel")
+    local goldLabel = statsPanel and statsPanel:FindFirstChild("GoldLabel")
+    local statList = statsPanel and statsPanel:FindFirstChild("StatList")
 
+    local bottomBar = safeFrame:FindFirstChild("BottomBar")
+    local xpPanel = bottomBar and bottomBar:FindFirstChild("XPPanel")
     local xpHeader = xpPanel and xpPanel:FindFirstChild("XPHeader")
     local xpLabel = xpHeader and xpHeader:FindFirstChild("XPText")
     local levelLabel = xpHeader and xpHeader:FindFirstChild("LevelLabel")
+    local xpTitleLabel = xpHeader and xpHeader:FindFirstChild("XPLabel")
     local xpBar = xpPanel and xpPanel:FindFirstChild("XPBar")
     local xpFill = xpBar and xpBar:FindFirstChild("Fill")
 
@@ -211,14 +239,19 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     local reservedAlert = alertArea and alertArea:FindFirstChild("ReservedAlerts")
     local reservedLabel = reservedAlert and reservedAlert:FindFirstChild("ReservedLabel")
 
+    local partyOverlay = safeFrame:FindFirstChild("PartyOverlay")
+    local partyList = partyOverlay and partyOverlay:FindFirstChild("PartyList")
+
     local abilityFrame = safeFrame:FindFirstChild("AbilityFrame")
+    local primarySlot = abilityFrame and (abilityFrame:FindFirstChild("PrimarySlot") or abilityFrame:FindFirstChild("PrimarySlot", true))
     local skillSlot = abilityFrame and (abilityFrame:FindFirstChild("SkillSlot") or abilityFrame:FindFirstChild("SkillSlot", true))
     local dashSlot = abilityFrame and (abilityFrame:FindFirstChild("DashSlot") or abilityFrame:FindFirstChild("DashSlot", true))
 
+    local primary = resolveCooldownSlot(primarySlot)
     local skill = resolveCooldownSlot(skillSlot)
     local dash = resolveCooldownSlot(dashSlot)
 
-    if not skill and not dash then
+    if not primary and not skill and not dash then
         self.Screen = screen
         self.Elements = {}
         if self.InterfaceSignal then
@@ -231,7 +264,7 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     local infoTextSize = uiConfig.InfoTextSize or 18
     local smallTextSize = uiConfig.SmallTextSize or 16
     local alertTextSize = uiConfig.AlertTextSize or 20
-    local sidePanelWidth = uiConfig.SidePanelWidth or uiConfig.TopInfoWidth or 260
+    local topBarHeight = uiConfig.TopBarHeight or 64
     local sectionSpacing = uiConfig.SectionSpacing or 12
     local panelBackground = uiConfig.PanelBackgroundColor or uiConfig.TopBarBackgroundColor or Color3.fromRGB(18, 24, 32)
     local panelTransparency = uiConfig.PanelBackgroundTransparency or uiConfig.TopBarTransparency or 0.35
@@ -242,61 +275,64 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     local panelPadding = uiConfig.PanelPadding or 12
 
     local dashSize = dashConfig.Size or 72
-    local abilityWidth = abilityConfig.Width or 260
+    local abilityWidth = abilityConfig.Width or 300
     local abilityHeight = abilityConfig.Height or 90
     local abilitySpacing = abilityConfig.Spacing or 12
     local abilityBottomOffset = abilityConfig.BottomOffset or 0
     local skillSlotSize = abilityConfig.SkillSize or dashSize
 
-    abilityWidth = math.max(abilityWidth, skillSlotSize + abilitySpacing + dashSize)
+    abilityWidth = math.max(abilityWidth, (skillSlotSize * 3) + (abilitySpacing * 2))
     abilityHeight = math.max(abilityHeight, math.max(skillSlotSize, dashSize))
 
-    local reservedBottom = math.max(0, abilityHeight + abilityBottomOffset + sectionSpacing)
+    local bottomReservedHeight = uiConfig.BottomReservedHeight or 160
 
     safeFrame.Size = UDim2.new(1, -safeMargin * 2, 1, -safeMargin * 2)
     safeFrame.Position = UDim2.new(0, safeMargin, 0, safeMargin)
 
-    if leftColumn then
-        leftColumn.Size = UDim2.new(0, sidePanelWidth, 1, -reservedBottom)
-        local leftLayout = leftColumn:FindFirstChildWhichIsA("UIListLayout")
-        if leftLayout then
-            leftLayout.Padding = UDim.new(0, sectionSpacing)
-        end
+    if topBar then
+        topBar.Size = UDim2.new(1, 0, 0, topBarHeight)
     end
 
-    if statusPanel then
-        statusPanel.BackgroundColor3 = panelBackground
-        statusPanel.BackgroundTransparency = panelTransparency
-        local statusCorner = statusPanel:FindFirstChildWhichIsA("UICorner")
-        if statusCorner then
-            statusCorner.CornerRadius = UDim.new(0, panelCornerRadius)
+    if statsPanel then
+        statsPanel.BackgroundColor3 = panelBackground
+        statsPanel.BackgroundTransparency = panelTransparency
+        local statsCorner = statsPanel:FindFirstChildWhichIsA("UICorner")
+        if statsCorner then
+            statsCorner.CornerRadius = UDim.new(0, panelCornerRadius)
         end
-        local statusStroke = statusPanel:FindFirstChildWhichIsA("UIStroke")
-        if statusStroke then
-            statusStroke.Color = panelStrokeColor
-            statusStroke.Thickness = panelStrokeThickness
-            statusStroke.Transparency = panelStrokeTransparency
-            statusStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        local statsStroke = statsPanel:FindFirstChildWhichIsA("UIStroke")
+        if statsStroke then
+            statsStroke.Color = panelStrokeColor
+            statsStroke.Thickness = panelStrokeThickness
+            statsStroke.Transparency = panelStrokeTransparency
+            statsStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
         end
-        local statusPadding = statusPanel:FindFirstChildWhichIsA("UIPadding")
-        if statusPadding then
-            statusPadding.PaddingTop = UDim.new(0, panelPadding)
-            statusPadding.PaddingBottom = UDim.new(0, panelPadding)
-            statusPadding.PaddingLeft = UDim.new(0, panelPadding)
-            statusPadding.PaddingRight = UDim.new(0, panelPadding)
-        end
-        if waveLabel then
-            waveLabel.TextSize = uiConfig.TopLabelTextSize or 20
+        local statsPadding = statsPanel:FindFirstChildWhichIsA("UIPadding")
+        if statsPadding then
+            statsPadding.PaddingTop = UDim.new(0, panelPadding)
+            statsPadding.PaddingBottom = UDim.new(0, panelPadding)
+            statsPadding.PaddingLeft = UDim.new(0, panelPadding)
+            statsPadding.PaddingRight = UDim.new(0, panelPadding)
         end
         if enemyLabel then
             enemyLabel.TextSize = infoTextSize
         end
-        if timerLabel then
-            timerLabel.TextSize = infoTextSize
-        end
         if goldLabel then
             goldLabel.TextSize = infoTextSize
         end
+        if statList then
+            local emptyLabel = statList:FindFirstChild("EmptyStatLabel")
+            if emptyLabel and emptyLabel:IsA("TextLabel") then
+                emptyLabel.TextSize = smallTextSize
+            end
+        end
+    end
+
+    if timerLabel then
+        timerLabel.TextSize = uiConfig.TopLabelTextSize or 20
+    end
+    if waveLabel then
+        waveLabel.TextSize = uiConfig.TopLabelTextSize or 26
     end
 
     if xpPanel then
@@ -320,14 +356,13 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
             xpPadding.PaddingLeft = UDim.new(0, panelPadding)
             xpPadding.PaddingRight = UDim.new(0, panelPadding)
         end
-        local xpHeader = xpPanel:FindFirstChild("XPHeader")
-        if xpHeader then
-            xpHeader.Size = UDim2.new(1, 0, 0, uiConfig.XP and uiConfig.XP.LabelHeight or 24)
-        end
         if xpLabel then
             xpLabel.Visible = true
             xpLabel.TextTransparency = 0
             xpLabel.TextSize = uiConfig.XP and uiConfig.XP.LabelTextSize or infoTextSize
+        end
+        if xpTitleLabel then
+            xpTitleLabel.TextSize = uiConfig.XP and uiConfig.XP.TitleTextSize or infoTextSize
         end
         if levelLabel then
             levelLabel.Visible = true
@@ -354,7 +389,7 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     end
 
     if alertArea then
-        local alertOffset = sidePanelWidth + sectionSpacing
+        local alertOffset = uiConfig.AlertHorizontalPadding or (safeMargin + 96)
         local totalPadding = alertOffset * 2
         local alertHeight = uiConfig.AlertAreaHeight or 160
         alertArea.AnchorPoint = Vector2.new(0.5, 0)
@@ -390,14 +425,45 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     end
 
     if abilityFrame then
-        abilityFrame.AnchorPoint = Vector2.new(0, 1)
-        abilityFrame.Position = UDim2.new(0, 0, 1, -abilityBottomOffset)
+        local abilityOffset = math.max(0, bottomReservedHeight - abilityBottomOffset)
+        abilityFrame.AnchorPoint = Vector2.new(0.5, 1)
+        abilityFrame.Position = UDim2.new(0.5, 0, 1, -abilityOffset)
         abilityFrame.Size = UDim2.new(0, abilityWidth, 0, abilityHeight)
         local abilityLayout = abilityFrame:FindFirstChildWhichIsA("UIListLayout")
         if abilityLayout then
-            abilityLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+            abilityLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
             abilityLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
             abilityLayout.Padding = UDim.new(0, abilitySpacing)
+        end
+    end
+
+    if primary then
+        primary.Container.Size = UDim2.new(0, skillSlotSize, 0, skillSlotSize)
+        primary.Gauge.BackgroundColor3 = abilityConfig.PrimaryBackgroundColor or Color3.fromRGB(18, 24, 32)
+        primary.Gauge.BackgroundTransparency = abilityConfig.PrimaryBackgroundTransparency or 0.15
+        if primary.KeyLabel then
+            primary.KeyLabel.Text = abilityConfig.PrimaryKey or "RMB"
+        end
+        local primaryStroke = primary.Gauge:FindFirstChildWhichIsA("UIStroke")
+        if primaryStroke then
+            primaryStroke.Color = abilityConfig.PrimaryStrokeColor or Color3.fromRGB(120, 200, 255)
+            primaryStroke.Thickness = abilityConfig.PrimaryStrokeThickness or 2
+            primaryStroke.Transparency = abilityConfig.PrimaryStrokeTransparency or 0.2
+            primaryStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        end
+        if primary.Overlay then
+            primary.Overlay.BackgroundColor3 = abilityConfig.PrimaryCooldownOverlayColor or Color3.new(0, 0, 0)
+            primary.Overlay.BackgroundTransparency = abilityConfig.PrimaryCooldownOverlayTransparency or 0.35
+            if primary.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                primary.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            primary.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
+            primary.Overlay.Visible = false
+            primary.Overlay.Size = UDim2.new(1, 0, 0, 0)
+        end
+        if primary.CooldownLabel then
+            primary.CooldownLabel.TextTransparency = 0
+            primary.CooldownLabel.Visible = true
         end
     end
 
@@ -405,6 +471,9 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         skill.Container.Size = UDim2.new(0, skillSlotSize, 0, skillSlotSize)
         skill.Gauge.BackgroundColor3 = abilityConfig.SkillBackgroundColor or Color3.fromRGB(18, 24, 32)
         skill.Gauge.BackgroundTransparency = abilityConfig.SkillBackgroundTransparency or 0.2
+        if skill.KeyLabel then
+            skill.KeyLabel.Text = abilityConfig.SkillKey or "Q"
+        end
         local skillStroke = skill.Gauge:FindFirstChildWhichIsA("UIStroke")
         if skillStroke then
             skillStroke.Color = abilityConfig.SkillStrokeColor or Color3.fromRGB(255, 196, 110)
@@ -415,6 +484,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         if skill.Overlay then
             skill.Overlay.BackgroundColor3 = abilityConfig.SkillCooldownOverlayColor or Color3.new(0, 0, 0)
             skill.Overlay.BackgroundTransparency = abilityConfig.SkillCooldownOverlayTransparency or 0.35
+            if skill.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                skill.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            skill.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
             skill.Overlay.Visible = false
             skill.Overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -428,6 +501,9 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         dash.Container.Size = UDim2.new(0, dashSize, 0, dashSize)
         dash.Gauge.BackgroundColor3 = dashConfig.BackgroundColor or Color3.fromRGB(18, 24, 32)
         dash.Gauge.BackgroundTransparency = dashConfig.BackgroundTransparency or 0.2
+        if dash.KeyLabel then
+            dash.KeyLabel.Text = dashConfig.KeyText or "E"
+        end
         local dashStroke = dash.Gauge:FindFirstChildWhichIsA("UIStroke")
         if dashStroke then
             dashStroke.Color = dashConfig.StrokeColor or Color3.fromRGB(120, 200, 255)
@@ -438,6 +514,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         if dash.Overlay then
             dash.Overlay.BackgroundColor3 = dashConfig.CooldownOverlayColor or Color3.new(0, 0, 0)
             dash.Overlay.BackgroundTransparency = dashConfig.CooldownOverlayTransparency or 0.35
+            if dash.Overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                dash.Overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            dash.Overlay.Position = UDim2.new(0.5, 0, 1, 0)
             dash.Overlay.Visible = false
             dash.Overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -449,6 +529,16 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
 
     self.Screen = screen
     self.SkillDisplayKey = abilityConfig.SkillKey or "Q"
+
+    local primaryReadyText = abilityConfig.PrimaryReadyText
+    if primaryReadyText == nil then
+        primaryReadyText = "ready"
+    else
+        primaryReadyText = tostring(primaryReadyText)
+    end
+    self.PrimaryReadyText = primaryReadyText
+    self.PrimaryReadyColor = abilityConfig.PrimaryReadyColor or Color3.fromRGB(200, 235, 255)
+
     local skillReadyText = abilityConfig.SkillReadyText
     if skillReadyText == nil then
         skillReadyText = "ready"
@@ -458,6 +548,7 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     self.SkillReadyText = skillReadyText
     self.SkillReadyColor = abilityConfig.SkillReadyColor or Color3.fromRGB(255, 235, 200)
     self.PrimarySkillId = abilityConfig.PrimarySkillId or "AOE_Blast"
+
     local dashReadyText = dashConfig.ReadyText
     if dashReadyText == nil then
         dashReadyText = "ready"
@@ -467,6 +558,10 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
     self.DashReadyText = dashReadyText
     self.DashReadyColor = dashConfig.ReadyColor or Color3.fromRGB(180, 255, 205)
 
+    if primary and primary.CooldownLabel then
+        primary.CooldownLabel.Text = self.PrimaryReadyText
+        primary.CooldownLabel.TextColor3 = self.PrimaryReadyColor
+    end
     if skill and skill.CooldownLabel then
         skill.CooldownLabel.Text = self.SkillReadyText
         skill.CooldownLabel.TextColor3 = self.SkillReadyColor
@@ -481,6 +576,11 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         EnemyLabel = enemyLabel,
         TimerLabel = timerLabel,
         GoldLabel = goldLabel,
+        StatList = statList,
+        PartyOverlay = partyOverlay,
+        PartyList = partyList,
+        PrimaryCooldownLabel = primary and primary.CooldownLabel or nil,
+        PrimaryCooldownOverlay = primary and primary.Overlay or nil,
         SkillCooldownLabel = skill and skill.CooldownLabel or nil,
         SkillCooldownOverlay = skill and skill.Overlay or nil,
         DashCooldownLabel = dash and dash.CooldownLabel or nil,
@@ -495,7 +595,12 @@ function HUDController:CaptureInterfaceElements(screen: ScreenGui, abilityConfig
         XPTextLabel = xpLabel,
         LevelLabel = levelLabel,
         XPBar = xpBar,
+        XPTitleLabel = xpTitleLabel,
     }
+
+    if partyOverlay then
+        partyOverlay.Visible = self.PartyOverlayVisible
+    end
 
     if alertArea and not self._alertAreaLastState then
         self.AlertAreaDefault = {
@@ -567,6 +672,10 @@ local function applyCooldownVisual(
         label.TextStrokeTransparency = 0.6
         label.Visible = true
         if overlay then
+            if overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+                overlay.AnchorPoint = Vector2.new(0.5, 1)
+            end
+            overlay.Position = UDim2.new(0.5, 0, 1, 0)
             overlay.Visible = false
             overlay.Size = UDim2.new(1, 0, 0, 0)
         end
@@ -593,6 +702,10 @@ local function applyCooldownVisual(
         if typeof(totalDuration) == "number" and totalDuration > 0 then
             ratio = math.clamp(remaining / totalDuration, 0, 1)
         end
+        if overlay.AnchorPoint ~= Vector2.new(0.5, 1) then
+            overlay.AnchorPoint = Vector2.new(0.5, 1)
+        end
+        overlay.Position = UDim2.new(0.5, 0, 1, 0)
         overlay.Visible = true
         overlay.Size = UDim2.new(1, 0, ratio, 0)
     end
@@ -604,7 +717,14 @@ function HUDController:Update(state)
     end
 
     local elapsedValue = typeof(state.Elapsed) == "number" and state.Elapsed or 0
-    self.Elements.WaveLabel.Text = string.format("Elapsed %s", formatTime(elapsedValue))
+    local waveNumber = tonumber(state.Wave)
+    if waveNumber then
+        waveNumber = math.max(1, math.floor(waveNumber + 0.5))
+        self.CurrentWave = waveNumber
+    else
+        waveNumber = self.CurrentWave or 1
+    end
+    self.Elements.WaveLabel.Text = string.format("Wave %d | %s", waveNumber, formatTime(elapsedValue))
 
     local enemies = state.RemainingEnemies or 0
     if typeof(enemies) == "number" then
@@ -612,7 +732,7 @@ function HUDController:Update(state)
     else
         enemies = 0
     end
-    self.Elements.EnemyLabel.Text = string.format("Enemies: %d", enemies)
+    self.Elements.EnemyLabel.Text = string.format("남은 적: %d", enemies)
 
     local countdownLabel = self.Elements.CountdownLabel
     local alertArea = self.Elements.AlertArea
@@ -682,9 +802,9 @@ function HUDController:Update(state)
     end
 
     if state.TimeRemaining and state.TimeRemaining >= 0 then
-        self.Elements.TimerLabel.Text = "Remaining: " .. formatTime(state.TimeRemaining)
+        self.Elements.TimerLabel.Text = "남은 시간 " .. formatTime(state.TimeRemaining)
     else
-        self.Elements.TimerLabel.Text = "Remaining: ∞"
+        self.Elements.TimerLabel.Text = "남은 시간 ∞"
     end
 
     local gold = state.Gold or 0
@@ -693,9 +813,10 @@ function HUDController:Update(state)
     else
         gold = 0
     end
-    self.Elements.GoldLabel.Text = string.format("Gold: %d", gold)
+    self.Elements.GoldLabel.Text = string.format("골드: %d", gold)
 
     self:UpdateXP(state)
+    self:UpdateParty(state.Party)
     self:UpdateSkillCooldowns(state.SkillCooldowns)
     self:UpdateDashCooldown(state.DashCooldown)
 end
@@ -704,6 +825,7 @@ function HUDController:UpdateXP(state)
     local xpFill = self.Elements.XPFill
     local xpLabel = self.Elements.XPTextLabel
     local levelLabel = self.Elements.LevelLabel
+    local xpTitleLabel = self.Elements.XPTitleLabel
 
     if not xpFill or not levelLabel then
         return
@@ -728,6 +850,9 @@ function HUDController:UpdateXP(state)
             prefix = xpConfig.LabelPrefix or "XP"
             prefix = string.gsub(prefix, "^%s+", "")
             prefix = string.gsub(prefix, "%s+$", "")
+            if xpTitleLabel then
+                prefix = ""
+            end
         end
 
         if joiner == nil then
@@ -753,6 +878,11 @@ function HUDController:UpdateXP(state)
         levelLabel.Text = string.format("Lv%s %d", levelPrefixJoiner, math.max(1, math.floor(levelValue + 0.5)))
     else
         levelLabel.Text = string.format("Lv%s %d", levelPrefixJoiner, 1)
+    end
+
+    if xpTitleLabel then
+        local title = xpConfig.Title or xpTitleLabel.Text or "XP"
+        xpTitleLabel.Text = title
     end
 
     local progress = state.XPProgress
@@ -807,6 +937,122 @@ function HUDController:UpdateXP(state)
         else
             xpLabel.Text = composeXPText("0")
         end
+    end
+end
+
+function HUDController:UpdateParty(partyState)
+    local list = self.Elements.PartyList
+    if not list then
+        return
+    end
+
+    local template = list:FindFirstChild("Template")
+    if not template or not template:IsA("Frame") then
+        return
+    end
+
+    for _, child in ipairs(list:GetChildren()) do
+        if child ~= template then
+            if child:IsA("Frame") then
+                child:Destroy()
+            elseif child:IsA("TextLabel") and child.Name == "EmptyText" then
+                child.Visible = false
+            end
+        end
+    end
+
+    local members = {}
+    if typeof(partyState) == "table" then
+        for key, info in pairs(partyState) do
+            if typeof(info) == "table" then
+                table.insert(members, { Key = key, Info = info })
+            end
+        end
+    end
+
+    table.sort(members, function(a, b)
+        local aName = tostring(a.Info.Name or a.Info.DisplayName or a.Key)
+        local bName = tostring(b.Info.Name or b.Info.DisplayName or b.Key)
+        return aName < bName
+    end)
+
+    if #members == 0 then
+        local empty = list:FindFirstChild("EmptyText")
+        if not empty then
+            empty = Instance.new("TextLabel")
+            empty.Name = "EmptyText"
+            empty.BackgroundTransparency = 1
+            empty.Size = UDim2.new(1, 0, 0, 28)
+            empty.Font = Enum.Font.Gotham
+            empty.TextSize = 16
+            empty.TextColor3 = Color3.fromRGB(200, 210, 230)
+            empty.TextStrokeTransparency = 0.7
+            empty.TextXAlignment = Enum.TextXAlignment.Left
+            empty.TextYAlignment = Enum.TextYAlignment.Center
+            empty.Parent = list
+        end
+        empty.Text = (Config.UI and Config.UI.Party and Config.UI.Party.EmptyText) or "No party members"
+        empty.Visible = true
+        empty.LayoutOrder = 1
+        return
+    end
+
+    local empty = list:FindFirstChild("EmptyText")
+    if empty then
+        empty.Visible = false
+    end
+
+    local localPlayer = Players.LocalPlayer
+
+    for index, entry in ipairs(members) do
+        local info = entry.Info
+        local row = template:Clone()
+        row.Visible = true
+        row.Name = string.format("Member%d", index)
+        row.LayoutOrder = index
+        row.Parent = list
+
+        local nameLabel = row:FindFirstChild("NameLabel")
+        if nameLabel and nameLabel:IsA("TextLabel") then
+            local displayName = tostring(info.Name or info.DisplayName or info.PlayerName or entry.Key)
+            nameLabel.Text = displayName
+            local userId = tostring(info.UserId or info.PlayerId or info.Id or "")
+            if localPlayer and tostring(localPlayer.UserId) == userId then
+                nameLabel.TextColor3 = Color3.fromRGB(180, 235, 255)
+            end
+        end
+
+        local levelLabel = row:FindFirstChild("LevelLabel")
+        if levelLabel and levelLabel:IsA("TextLabel") then
+            local levelValue = tonumber(info.Level)
+            if not levelValue and typeof(info.LevelText) == "string" then
+                levelLabel.Text = info.LevelText
+            else
+                levelValue = math.max(1, math.floor((levelValue or 1) + 0.5))
+                levelLabel.Text = string.format("Lv.%d", levelValue)
+            end
+        end
+
+        local healthLabel = row:FindFirstChild("HealthLabel")
+        if healthLabel and healthLabel:IsA("TextLabel") then
+            local current = tonumber(info.Health or info.CurrentHealth)
+            local maximum = tonumber(info.MaxHealth or info.HealthMax or info.Max)
+            if current and maximum then
+                healthLabel.Text = string.format("HP %d / %d", math.floor(current + 0.5), math.floor(maximum + 0.5))
+            elseif current then
+                healthLabel.Text = string.format("HP %d", math.floor(current + 0.5))
+            else
+                healthLabel.Text = "HP -"
+            end
+        end
+    end
+end
+
+function HUDController:SetPartyOverlayVisible(visible)
+    self.PartyOverlayVisible = visible and true or false
+    local overlay = self.Elements.PartyOverlay
+    if overlay then
+        overlay.Visible = self.PartyOverlayVisible
     end
 end
 
@@ -941,6 +1187,10 @@ function HUDController:PlayWaveAnnouncement(wave: number)
 
     label.Text = string.format("Wave %d", wave)
     label.TextTransparency = 0
+    self.CurrentWave = wave
+    if self.Elements.WaveLabel then
+        self.Elements.WaveLabel.Text = string.format("Wave %d | %s", math.max(1, math.floor((wave or 1) + 0.5)), formatTime(0))
+    end
 
     task.spawn(function()
         task.wait(1.2)
